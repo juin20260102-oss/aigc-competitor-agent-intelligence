@@ -1,5 +1,5 @@
 ﻿"""
-UI 模块：视觉存证截图画廊 (Screenshot Gallery - SaaS 旗舰版)
+UI 模块：网页截图存证画廊。
 """
 
 import os
@@ -13,15 +13,18 @@ SCREENSHOT_DIR = os.path.join(DATA_DIR, "screenshots")
 
 def render_gallery():
     st.markdown('<div class="hero-title">🖼️ 视觉存证与快照画廊</div>', unsafe_allow_html=True)
-    st.markdown('<div class="hero-subtitle">全景高清网格化浏览 16+ 竞品最新网页渲染实况，赋能视觉审计与防幻觉抽检</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-subtitle">浏览最近一次网页渲染截图，对模型提取结果进行人工抽检</div>', unsafe_allow_html=True)
 
-    screenshots = sorted(glob.glob(os.path.join(SCREENSHOT_DIR, "*.png")))
+    screenshots = sorted(
+        path for path in glob.glob(os.path.join(SCREENSHOT_DIR, "*.png"))
+        if not os.path.basename(path).startswith("test_")
+    )
 
     if not screenshots:
         st.info("💡 暂无本地截图存证，请先前往【监控大盘】运行一次全量监控。")
         return
 
-    st.caption(f"当前归档共 **{len(screenshots)}** 张真实渲染网页快照：")
+    st.caption(f"当前可查看 **{len(screenshots)}** 张最近一次网页快照：")
 
     # 3 列响应式画廊
     cols = st.columns(3)

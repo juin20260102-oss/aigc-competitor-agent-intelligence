@@ -184,6 +184,14 @@ def save_snapshot(site_key: str, url: str, content: str, profile: str | None = N
         json.dump(snapshot, f, ensure_ascii=False, indent=2)
 
 
+def extract_latest_change(entry: str) -> str:
+    """仅提取本次变化段，避免宏观总结把历史基准画像误当成今日动态。"""
+    marker = "#### 【最新版本迭代与动态追踪】"
+    if marker not in entry:
+        return "未识别到结构化变化段，需人工复核。"
+    return entry.split(marker, 1)[1].strip()[:1200]
+
+
 # ── State：LangGraph 共享状态 ────────────────────────────────────
 
 class AgentState(TypedDict):
@@ -281,6 +289,7 @@ async def compare_all_node(state: AgentState) -> dict:
     comparisons = {}
     first_time_urls = []
     screenshots = state.get("crawled_screenshots", {})
+    llm_sem = asyncio.Semaphore(4)
 
     async def process_one_site(url: str, content: str) -> tuple[str, str, bool, object]:
         site_key = get_site_key(url)
@@ -308,11 +317,12 @@ async def compare_all_node(state: AgentState) -> dict:
 - **商业/运营细节**：（UI风格、定价收费模式、引导策略等；无价格标“定价未公开”）【依据：页面原文“...”】
 - **竞争力评级**：（S/A/B/C，并附 1-2 句简评）"""
 
-            response = await client.chat.completions.create(
-                model=model,
-                max_tokens=1024,
-                messages=[{"role": "user", "content": prompt}]
-            )
+            async with llm_sem:
+                response = await client.chat.completions.create(
+                    model=model,
+                    max_tokens=1024,
+                    messages=[{"role": "user", "content": prompt}]
+                )
             profile_text = response.choices[0].message.content
 
             full_entry = f"""{profile_text}
@@ -349,11 +359,12 @@ async def compare_all_node(state: AgentState) -> dict:
 - **删除/调整**：（上次有、本次下线或修改的内容，没有写“无”）【依据：...】
 - **运营参考**：（对我们产品侧/运营侧的跟进建议，无变化写“暂无”）"""
 
-            response = await client.chat.completions.create(
-                model=model,
-                max_tokens=800,
-                messages=[{"role": "user", "content": prompt}]
-            )
+            async with llm_sem:
+                response = await client.chat.completions.create(
+                    model=model,
+                    max_tokens=800,
+                    messages=[{"role": "user", "content": prompt}]
+                )
             diff_text = response.choices[0].message.content
 
             full_entry = f"""{last['profile']}
@@ -369,10 +380,16 @@ async def compare_all_node(state: AgentState) -> dict:
             print(f"  [完成比对] {site_key}")
             return url, full_entry, False, response.usage
 
-    tasks = [process_one_site(url, content) for url, content in state["crawled_contents"].items()]
-    results = await asyncio.gather(*tasks)
+    site_inputs = list(state["crawled_contents"].items())
+    tasks = [process_one_site(url, content) for url, content in site_inputs]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    for url, entry, is_first, usage in results:
+    for (source_url, _), result in zip(site_inputs, results):
+        if isinstance(result, Exception):
+            print(f"  [分析失败] {source_url}：{result}")
+            comparisons[source_url] = "#### 【最新版本迭代与动态追踪】\n- **状态**：模型分析失败，已保留抓取结果，请人工复核或稍后重试。"
+            continue
+        url, entry, is_first, usage = result
         comparisons[url] = entry
         if is_first:
             first_time_urls.append(url)
@@ -395,19 +412,19 @@ async def generate_report_node(state: AgentState) -> dict:
 
     sites_brief = ""
     for url, result in state["comparisons"].items():
-        sites_brief += f"\n- **站点**：{url}\n{result[:600]}...\n"
+        sites_brief += f"\n- **站点**：{url}\n{extract_latest_change(result)}\n"
 
     macro_prompt = f"""你是 AIGC 竞品监控团队的核心资深分析师。以下是今日所有成功监控站点的核心摘要：
 
 {sites_brief}
 
-请根据今日所有竞品的整体动态，输出以下两部分的宏观分析（格式严格遵循 Markdown）：
+请只根据上方“本次变化段”输出以下两部分，不得把历史产品画像当成今日动态，也不得预测页面证据之外的行业趋势。首次纳入监控只表示建立基线，不代表竞品今日发布了新功能。若证据不足，请明确写“需人工复核”。格式严格遵循 Markdown：
 
 ## 🌟 今日重点提炼
-（提炼 1-3 条最值得全团队关注的关键行业动向、黑马竞品、重大功能发布或商业化策略；若大盘均为日常稳定期则如实总结）
+（提炼 1-3 条有本次变化文本支持的重点；若没有足够证据则如实说明）
 
 ## 💡 产品与运营行动建议
-（基于上述所有竞品动向，为我们团队提出 2-4 条具体可落地的参考与跟进建议）
+（基于上述变化提出 2-4 条可验证的参考建议，并与事实结论区分）
 """
 
     response = await client.chat.completions.create(
@@ -443,6 +460,8 @@ async def generate_report_node(state: AgentState) -> dict:
     today_str = datetime.now().strftime('%Y年%m月%d日')
     final_report = f"""# AIGC 竞品监控日报 · {today_str}
 
+> 本报告由模型基于网页抓取结果生成，用于提高信息整理效率；引用、变化判断与行动建议均需人工复核。
+
 {summary_part}
 
 ---
@@ -458,7 +477,7 @@ async def generate_report_node(state: AgentState) -> dict:
     print("日报生成完成！共包含 " + str(len(state['comparisons'])) + " 个完整竞品板块")
     print(tracker.summary_markdown())
 
-    report_path = os.path.join(REPORT_DIR, f"daily_report_{datetime.now().strftime('%Y%m%d')}.md")
+    report_path = os.path.join(REPORT_DIR, f"daily_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md")
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(final_report)
     print(f"日报已保存至：{report_path}")
@@ -554,7 +573,7 @@ async def main():
     final_state = await agent.ainvoke(initial_state)
 
     print("\n" + "=" * 60)
-    print(f"【完整竞品日报已保存至 reports/daily_report_{datetime.now().strftime('%Y%m%d')}.md】")
+    print("【完整竞品日报已保存至 reports 目录】")
     print("=" * 60)
 
 

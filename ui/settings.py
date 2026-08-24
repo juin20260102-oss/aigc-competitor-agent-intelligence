@@ -1,5 +1,5 @@
 ﻿"""
-UI 模块：全局系统与安全配置中心 (Settings & Security)
+UI 模块：模型与通知配置。
 """
 
 import os
@@ -34,10 +34,9 @@ def load_env_dict():
 
 
 def save_env_dict(data: dict):
-    """安全保存键值对到 .env 文件"""
+    """将键值对保存到本地 .env 文件。"""
     content = f"""# AIGC 竞品监控 Agent 配置文件
 OPENAI_API_KEY={data.get('OPENAI_API_KEY', '')}
-DASHSCOPE_API_KEY={data.get('OPENAI_API_KEY', '')}
 OPENAI_BASE_URL={data.get('OPENAI_BASE_URL', 'https://dashscope.aliyuncs.com/compatible-mode/v1')}
 MODEL_NAME={data.get('MODEL_NAME', 'qwen3.7-flash')}
 WECOM_WEBHOOK={data.get('WECOM_WEBHOOK', '')}
@@ -69,8 +68,8 @@ def test_wecom_webhook(webhook: str) -> tuple[bool, str]:
 
 
 def render_settings():
-    st.markdown('<div class="hero-title">⚙️ 全局系统与安全中心</div>', unsafe_allow_html=True)
-    st.markdown('<div class="hero-subtitle">大语言模型凭证密保管理、模型路由策略与企业微信群推送配置</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-title">⚙️ 模型与通知设置</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-subtitle">配置 OpenAI 兼容模型接口，并按需连接企业微信群机器人</div>', unsafe_allow_html=True)
 
     env_data = load_env_dict()
     current_raw_key = env_data["OPENAI_API_KEY"]
@@ -78,12 +77,12 @@ def render_settings():
 
     # 1. 密钥安全脱敏提示卡
     st.markdown(f"""
-<div style="background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 12px; padding: 1rem 1.2rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between;">
+<div style="background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 12px; padding: 1rem 1.2rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between;">
     <div>
-        <div style="color: #166534; font-weight: 700; font-size: 0.95rem;">🔒 API Key 动态脱敏保护已激活</div>
-        <div style="color: #15803D; font-size: 0.85rem; margin-top: 2px;">当前生效密钥：<code style="background: rgba(22,101,52,0.1); padding: 2px 8px; border-radius: 4px; font-weight: 600; color: #166534;">{masked_key_str}</code> （密保掩码显示，绝不明文暴露）</div>
+        <div style="color: #1E3A8A; font-weight: 700; font-size: 0.95rem;">🔑 本地模型配置</div>
+        <div style="color: #1D4ED8; font-size: 0.85rem; margin-top: 2px;">当前密钥：<code style="background: rgba(37,99,235,0.1); padding: 2px 8px; border-radius: 4px; font-weight: 600; color: #1E3A8A;">{masked_key_str}</code>。界面仅显示掩码，实际内容保存在本地 <code>.env</code> 文件中。</div>
     </div>
-    <div style="background: #22C55E; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.78rem; font-weight: 700;">安全就绪</div>
+    <div style="background: #2563EB; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.78rem; font-weight: 700;">本地保存</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -108,7 +107,7 @@ def render_settings():
                 st.caption(f"当前生效模型：`{final_model}`")
 
         st.markdown("---")
-        st.markdown("### 🔑 2. 接口地址与密保凭证")
+        st.markdown("### 🔑 2. 接口地址与访问凭证")
 
         col_base, col_key = st.columns([1, 1])
         with col_base:
@@ -141,7 +140,7 @@ def render_settings():
                 "WECOM_WEBHOOK": wecom_webhook.strip()
             }
             save_env_dict(new_config)
-            st.success("✅ 配置已安全保存并生效！")
+            st.success("✅ 配置已保存到本地 .env 文件并生效。")
             st.rerun()
 
     # 3. 独立连通性测试区

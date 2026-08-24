@@ -1,8 +1,12 @@
 ﻿"""
-AIGC 竞品监控 Agent 可视化控制台 (现代化高颜值 SaaS 旗舰版)
+AIGC 竞品情报工作台。
 """
 
+import os
 import streamlit as st
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # 页面基础配置
 st.set_page_config(
@@ -12,13 +16,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 注入高颜值现代化 SaaS 样式 CSS (卡片阴影、渐变徽章、精致排版、毛玻璃质感)
+# 控制台样式
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-    
     html, body, [class*="css"] {
-        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", Roboto, Arial, sans-serif;
     }
     
     /* 页面背景底色与微光质感 */
@@ -195,14 +197,18 @@ from ui.gallery import render_gallery
 from ui.settings import render_settings
 
 # 侧边栏品牌与导航
+has_api_key = bool(os.getenv("OPENAI_API_KEY") or os.getenv("DASHSCOPE_API_KEY"))
+runtime_status = "模型已配置，可执行新一轮监控" if has_api_key else "演示数据可查看，运行前需配置模型"
+status_color = "#10B981" if has_api_key else "#F59E0B"
+
 with st.sidebar:
-    st.markdown("""
+    st.markdown(f"""
 <div style="padding: 0.5rem 0 1rem 0;">
     <div style="font-size: 1.25rem; font-weight: 800; color: #FFFFFF; display: flex; align-items: center; gap: 8px;">
         <span>⚡</span> AIGC 竞品情报舱
     </div>
     <div style="font-size: 0.78rem; color: #94A3B8; margin-top: 4px;">
-        <span class="status-dot-active"></span> Agent 实时态势感知就绪
+        <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:{status_color};margin-right:6px;"></span>{runtime_status}
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -212,11 +218,11 @@ with st.sidebar:
     menu_option = st.radio(
         "导航菜单",
         [
-            "🏠 监控大盘与控制",
-            "📑 每日情报中心",
-            "🌐 竞品深度档案",
-            "🖼️ 视觉存证画廊",
-            "⚙️ 全局系统与安全"
+            "🏠 概览与运行",
+            "📑 情报报告",
+            "🌐 竞品档案",
+            "🖼️ 截图证据",
+            "⚙️ 设置"
         ],
         index=0
     )
@@ -225,26 +231,26 @@ with st.sidebar:
     
     st.markdown("""
 <div style="background: rgba(255,255,255,0.04); border-radius: 10px; padding: 0.8rem; border: 1px solid rgba(255,255,255,0.06); font-size: 0.8rem;">
-    <div style="color: #60A5FA; font-weight: 600; margin-bottom: 4px;">🔒 核心特性</div>
+    <div style="color: #60A5FA; font-weight: 600; margin-bottom: 4px;">工作流</div>
     <div style="color: #94A3B8; line-height: 1.6;">
-        • 16 站点全并发异步解析<br>
-        • 双轨画像 + 历史档案持久化<br>
-        • 全文证据归因 & 本地截图<br>
-        • API Key 严格密保脱敏
+        • 控制并发抓取网页<br>
+        • 基准画像 + 增量对比<br>
+        • 原文与截图留存<br>
+        • 日报汇总 + 人工复核
     </div>
 </div>
 """, unsafe_allow_html=True)
     
-    st.caption("引擎版本：v2.5 · Powered by LangGraph")
+    st.caption("产品原型 · LangGraph 工作流")
 
 # 页面路由分发
-if menu_option == "🏠 监控大盘与控制":
+if menu_option == "🏠 概览与运行":
     render_dashboard()
-elif menu_option == "📑 每日情报中心":
+elif menu_option == "📑 情报报告":
     render_reports()
-elif menu_option == "🌐 竞品深度档案":
+elif menu_option == "🌐 竞品档案":
     render_competitors()
-elif menu_option == "🖼️ 视觉存证画廊":
+elif menu_option == "🖼️ 截图证据":
     render_gallery()
-elif menu_option == "⚙️ 全局系统与安全":
+elif menu_option == "⚙️ 设置":
     render_settings()
