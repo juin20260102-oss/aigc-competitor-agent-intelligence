@@ -1,7 +1,8 @@
 @echo off
 chcp 65001 >nul
-cd /d "D:\Anti\Agent_Daily_Report"
+cd /d "%~dp0"
+if not exist reports mkdir reports
 echo ======================================================== >> reports\scheduler.log
-echo [%date% %time%] 开始执行每日竞品监控任务 >> reports\scheduler.log
+echo [%date% %time%] Start daily competitor intelligence run >> reports\scheduler.log
 python step3_agent.py >> reports\scheduler.log 2>&1
-echo [%date% %time%] 每日竞品监控任务执行完毕 >> reports\scheduler.log
+echo [%date% %time%] Daily competitor intelligence run finished >> reports\scheduler.log

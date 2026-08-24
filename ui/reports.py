@@ -1,5 +1,5 @@
 ﻿"""
-UI 模块：每日情报中心 (Reports - SaaS 旗舰版)
+UI 模块：历史日报查看与分发。
 """
 
 import os
@@ -7,6 +7,9 @@ import glob
 import httpx
 import streamlit as st
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 REPORT_DIR = "reports"
 
@@ -35,7 +38,7 @@ def send_to_wecom(content: str, webhook: str) -> tuple[bool, str]:
 
 def render_reports():
     st.markdown('<div class="hero-title">📑 每日竞品情报中心</div>', unsafe_allow_html=True)
-    st.markdown('<div class="hero-subtitle">结构化阅读历史全量日报、搜索特定关键词、一键导出 Markdown 或分发至企业微信群</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-subtitle">查看历史日报、搜索关键词、下载 Markdown，并对模型结论进行人工复核</div>', unsafe_allow_html=True)
 
     report_files = sorted(glob.glob(os.path.join(REPORT_DIR, "daily_report_*.md")), reverse=True)
 

@@ -6,6 +6,8 @@ __pycache__/
 *.py[cod]
 *.class
 *.log
+.venv/
+venv/
 
 # Crawler and Playwright caches
 .crawl4ai/
