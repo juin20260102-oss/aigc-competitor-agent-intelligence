@@ -1,0 +1,25 @@
+来源：https://www.midjourney.com
+==================================================
+
+## 1. 产品定位
+- 本产品是由60人独立团队运营的社区资助型AI研究机构，核心服务具备高审美需求与未来人文探索意愿的创作者及泛科技用户。【依据：页面原文“We're a community-funded research lab of 60 people known for building the most beautiful AI models in the world.”】
+
+## 2. 核心功能
+- 图像与视频内容生成：提供高保真静态绘图与动态视频演算的底层管线。【依据：页面原文“building the most beautiful AI models in the world.”】
+- 软硬件工具生态拓展：持续推进配套生产力软件及实体终端设备的研发集成。【依据：页面原文“over the coming months, we’re unveiling a wide range of ambitious projects under the themes of imagination”】
+- 垂直行业场景适配：针对医疗健康等细分领域部署定制化AI解决方案。【依据：页面原文“We believe that we are all midjourney: that we have a rich past behind us”】
+- 核心模型版本迭代：定期发布底层大模型重大更新并同步官方技术解读文档。【依据：页面原文“V8.2 is live! Learn more in our blog post”】
+
+## 3. 差异化亮点
+- 去中心化社区筹资机制：摆脱传统VC融资路径，依靠社区力量直接反哺技术研发。【依据：页面原文“We're a community-funded research lab...lean, self-funded”】
+- 强烈的人文叙事导向：将技术迭代深度绑定于探讨人类精神成长与社会未来形态。【依据：页面原文“We hope our work will help tell stories of a humane future that we all want to be a part of”】
+- 扁平分布式作业架构：保持精简团队编制，实现跨区域敏捷协同与持续招聘开放。【依据：页面原文“We're a lean, self-funded, distributed team and we're always hiring.”】
+- 社区化客户服务体系：将Discord服务器作为核心交互枢纽，替代传统企业级工单系统。【依据：页面原文“For product questions and support go to our Discord or help page”】
+
+## 4. 商业化与运营细节
+- 定价策略：页面未公开（无订阅档位、按量计费或API调用说明）。【依据：页面未披露】
+- 转化漏斗设计：首屏强制暴露注册入口，配合新版本Banner制造技术进阶感促活留存。【依据：页面原文“Sign Up”及“V8.2 is live! Learn more in our blog post”】
+- 渠道分层与响应机制：严格区分产品咨询、账单结算与公关媒体的专属对接通道，降低沟通摩擦。【依据：页面原文“For billing support email us at: billing@... For journalistic inquiries: press@...”】
+- 品牌官网体验基调：采用极简结构化排版与符号矩阵展示产品线，弱化促销堆砌，强调文档与探索入口。【依据：页面原文“Explore”、“Documentation”及多组图标加文字的项目阵列结构】
+
+> 📸 网页截图存证路径：`data\screenshots\www.midjourney.com_latest.png`

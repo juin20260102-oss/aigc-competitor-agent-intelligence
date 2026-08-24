@@ -1,0 +1,41 @@
+{
+  "url": "https://klingai.com",
+  "content": "# Kling AI Video and Image Generator\nKling's global website has officially migrated to kling.ai. Try it now \nGo to kling.ai\n[](https://klingai.com/)\n创作工具\n开发者平台\n关于我们\n立即体验\n可灵 AI 创作平台\n[Omni](https://klingai.com/app/omni/new)\n[AI视频](https://klingai.com/app/image-to-video/frame-mode/new)\n[AI图片](https://klingai.com/app/image/new)\n[AI音效](https://klingai.com/app/text-to-audio/new)\n[创意特效](https://klingai.com/app/special-effects/new)\n[更多创意工具](https://klingai.com/app/all-tools)\n可灵 AI 移动端\n![](https://static.yximgs.com/kos/nlav10378/kling-web/iosCode.png)\niOS\n![](https://p4-kling.klingai.com/bs2/upload-ylab-stunt/kling/app_ad/androidCode-v3.png)\nAndroid\n[平台首页](https://klingai.com/dev)\n[产品定价](https://klingai.com/dev/pricing)\n[文档中心](https://klingai.com/document-api/quickStart/productIntroduction/overview)\n[可灵AI使用指南](https://docs.qingque.cn/d/home/eZQBGvsEtlGCz5-IhhQP3S-eM?identityId=2CYV3VL6EGS)\n[未来合伙人计划](https://klingai.com/app/future-partner/customer)\n联系我们 support.cn@klingai.com\n全新推出可灵AI 3.0 系列\nAll in One，One for All\n开启创作\n![](https://p4-kling.klingai.com/kcdn/cdn-kcdn112452/kling-homepage-aio/assets/images/page1-v3-cover-1-DqNSFhji.jpeg)\n车内视角，手持镜头，画面聚焦前方公路\n视频 3.0 系列模型\n基于全面升级的底层架构，视频 3.0 和 视频 3.0 Omni 原生支持多模态指令的深度解析与跨任务融合，重构光影与声音的叙事逻辑。\n从超长视频的精准分镜，到音画同步的特征解耦，我们实现了视觉主体与听觉音色的双重绑定。在复杂场景的跨时空调度中，为您带来高自由度、高一致性的极致创作体验。\n",
+  "profile": "### 【产品基准深度画像】\n- **产品定位**：面向个人创作者与专业团队的AI全栈内容生产平台，主打多模态一体化工作流。【依据：“可灵 AI 创作平台”】\n- **核心功能**：提供图文生成、音视频制作及后期处理的全链路工具矩阵。【依据：“AI视频”“AI图片”“AI音效”“创意特效”】\n- **差异化亮点**：突破传统单模态生成局限，实现视觉主体与听觉音色的底层双向绑定。【依据：“实现了视觉主体与听觉音色的双重绑定”】\n- **商业/运营细节**：UI采用沉浸式工具导航布局，首屏强推最新迭代模型；定价套餐与算力额度页面未披露，依托合伙人计划构建渠道生态。【依据：“产品定价”“未来合伙人计划”“开发者平台”“全新推出可灵AI 3.0 系列”】\n- **竞争力评级**：S级。依托底层架构重构与全栈多模态工具链，已构建从创作到分发的完整闭环，在高一致性视频生成领域具备显著的技术代差与商业化延展性。【依据：“为您带来高自由度、高一致性的极致创作体验”】",
+  "screenshot_path": "data\\screenshots\\klingai.com_latest.png",
+  "captured_at": "2026-08-24T09:33:12.066147",
+  "update_history": [
+    {
+      "time": "2026-08-19 15:24",
+      "summary": "### 【最新版本迭代与动态追踪】\n- **变化摘要**：本次抓取与上次仅间隔5分钟，站端核心导航、功能入口及3.0系列宣发文案均与原样完全一致。本次无明显变化。\n- **新增内容**：无\n- **删除/调整**：无\n- **运营参考**：暂无。鉴于可灵AI目前正处于“视频3.0系列”集中预热/宣发期，建议将竞品巡检频率调整为定时自动抓取（如每日早晚各一次），以便在其进入正式公测、调整计费策略或开"
+    },
+    {
+      "time": "2026-08-19 15:36",
+      "summary": "### 【最新版本迭代与动态追踪】\n- **变化摘要**：本次抓取发现 2 处官网页面布局与导流入口调整，核心产品矩阵、模型宣发文案及定价信息均无实质性变动。\n- **新增内容**：\n  1. **顶部国际站跳转提示**：在站点标题下方新增英文引流 banner，提示海外用户访问独立国际域名。【依据：本次新增原文“Kling's global website has officially migr"
+    },
+    {
+      "time": "2026-08-19 15:42",
+      "summary": "#### 【最新版本迭代与动态追踪】\n- **变化摘要**：本次对比发现 1 处页面视觉素材补充（6分钟极短时间内通常为静态资源加载或Banner微调），核心功能与文案无实质迭代。\n- **新增内容**：首页“全新推出可灵AI 3.0 系列”宣传区，“开启创作”交互按钮下方新增了一张示例图及其对应的提示词描述。【依据：本次新增原文“![](https://p4-kling.klingai.com/"
+    },
+    {
+      "time": "2026-08-19 17:57",
+      "summary": "#### 【最新版本迭代与动态追踪】\n- **变化摘要**：本次无明显变化（两次抓取文本逐字对比完全一致）。\n- **新增内容**：无\n- **删除/调整**：无\n- **运营参考**：暂无（当前官方着陆页文案、导航链路及核心宣传语在本次2小时窗口期内保持静态稳定。建议后续将监测重心下沉至 `[产品定价]` 页面的额度/套餐规则变更，或通过实际调用 `视频3.0 Omni` 接口/客户端内测，追踪"
+    },
+    {
+      "time": "2026-08-20 09:55",
+      "summary": "#### 【最新版本迭代与动态追踪】\n- **变化摘要**：本次无明显变化，两次抓取的内容文本、功能入口及宣传文案完全一致。\n- **新增内容**：无\n- **删除/调整**：无\n- **运营参考**：暂无。竞品当前页面处于稳定展示状态，核心主推仍为“可灵AI 3.0 系列”及“All in One”定位，顶部导航、工具矩阵（Omni、AI视频、AI图片、AI音效等）及底部资源链接均无增删改。建议"
+    },
+    {
+      "time": "2026-08-20 09:56",
+      "summary": "#### 【最新版本迭代与动态追踪】\n- **变化摘要**：本次抓取间隔仅1分钟，经逐字逐句比对，上下两版页面文案、功能入口、导航链接、素材资源及底部信息完全一致，本次无明显变化。\n- **新增内容**：无\n- **删除/调整**：无\n- **运营参考**：暂无（1分钟内抓取通常为静态缓存命中状态。建议后续将竞情追踪的时间间隔拉长至24小时/周，或设置针对特定路由（如 `/app/omni/new"
+    },
+    {
+      "time": "2026-08-20 10:33",
+      "summary": "#### 【最新版本迭代与动态追踪】\n- **变化摘要**：本次抓取内容与上次完全一致，页面文案、功能入口、链接地址及宣传物料均无变动，本次无明显变化。\n- **新增内容**：无\n- **删除/调整**：无\n- **运营参考**：暂无"
+    },
+    {
+      "time": "2026-08-24 09:33",
+      "summary": "#### 【最新版本迭代与动态追踪】\n- **变化摘要**：本次无明显变化。两次抓取内容在导航结构、功能列表、开发者资源链接及首页宣发文案上完全一致。\n- **新增内容**：无【依据：经全文逐行比对，本次抓取原文未新增任何产品入口、营销文案或资源链接】\n- **删除/调整**：无【依据：经全文逐行比对，本次抓取原文未下线或修改任何原有模块与说明文字】\n- **运营参考**：暂无可立即跟进的动态变化"
+    }
+  ]
+}

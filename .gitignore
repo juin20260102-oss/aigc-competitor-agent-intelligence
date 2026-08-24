@@ -1,0 +1,18 @@
+﻿# Environment variables
+.env
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.class
+*.log
+
+# Crawler and Playwright caches
+.crawl4ai/
+.playwright/
+
+# Data and snapshots (keep structure, ignore json snapshots if needed, or ignore all data/snapshots)
+# data/snapshots/*.json
+
+# Archives
+archives/
