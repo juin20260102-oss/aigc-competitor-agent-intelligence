@@ -89,6 +89,9 @@ class EvidenceStore:
         site_dir.mkdir(parents=True, exist_ok=True)
         self._write_once(site_dir / "analysis.json", analysis)
 
+    def record_run_summary(self, run_id: str, summary: dict) -> None:
+        self._write_once(self.run_dir(run_id) / "run_summary.json", summary)
+
     def finalize_run(
         self,
         run_id: str,

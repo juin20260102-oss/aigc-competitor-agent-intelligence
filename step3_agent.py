@@ -10,6 +10,7 @@ import asyncio
 import json
 import httpx
 import base64
+import time
 from datetime import datetime
 from dataclasses import dataclass, asdict
 from typing import TypedDict
@@ -25,6 +26,7 @@ from analysis_schema import (
     structured_output_instruction,
 )
 from evidence_store import EvidenceStore, configured_retention_policy, new_run_id
+from run_control import AgentLimits, ModelBudget, build_wecom_summary, emit_run_event
 
 from agent_utils import (
     AgentRunLock,
@@ -57,6 +59,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 load_dotenv(PROJECT_ROOT / ".env", override=True)
 ensure_runtime_layout()
+LIMITS = AgentLimits.from_env()
 
 # ── 默认兜底竞品清单 ───────────────────────────────────────────────
 DEFAULT_COMPETITOR_URLS = [
@@ -121,12 +124,14 @@ WECOM_WEBHOOK = os.getenv("WECOM_WEBHOOK", "")
 
 @dataclass
 class TokenTracker:
+    model_calls: int = 0
     prompt_tokens: int = 0
     cached_prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
 
     def add(self, usage):
+        self.model_calls += 1
         if not usage:
             return
         prompt = getattr(usage, "prompt_tokens", 0) or 0
@@ -157,6 +162,7 @@ class TokenTracker:
 | **命中缓存输入 (Prompt Cache Hit)** | `{self.cached_prompt_tokens:,}` | 享受缓存优惠/极低价 Token |
 | **输出生成 (Completion Output)** | `{self.completion_tokens:,}` | 模型生成的分析与日报 Token |
 | **总计消耗 (Total Tokens)** | **`{self.total_tokens:,}`** | 本次监控全流程总 Token |
+| **模型逻辑调用 (Model Calls)** | **`{self.model_calls:,}`** | 不含同一次调用内部重试 |
 """
 
 
@@ -260,7 +266,7 @@ async def call_llm_with_retry(
                 request["response_format"] = response_format
             return await asyncio.wait_for(
                 client.chat.completions.create(**request),
-                timeout=55.0,
+                timeout=float(LIMITS.model_timeout_seconds),
             )
         except Exception as exc:
             last_error = exc
@@ -311,6 +317,7 @@ def extract_latest_change(entry: str) -> str:
 
 class AgentState(TypedDict):
     run_id: str                       # 不可变证据运行标识
+    started_monotonic: float          # 本次运行单调时钟起点
     urls: list[str]                    # 要监控的网址列表
     crawled_contents: dict[str, str]   # 抓取结果：{url: 内容}
     crawled_screenshots: dict[str, str]# 网页截图：{url: 截图路径}
@@ -333,8 +340,12 @@ class AgentState(TypedDict):
 async def crawl_all_node(state: AgentState) -> dict:
     urls_to_crawl = state["urls"]
     evidence = EvidenceStore(RUNTIME_ROOT)
-    print(f"\n[节点1] 开始并发抓取与截图 {len(urls_to_crawl)} 个网站（3 并发控制 + 自动清理弹窗）...")
-    sem = asyncio.Semaphore(3)
+    emit_run_event(evidence.run_dir(state["run_id"]), "crawl_started", site_count=len(urls_to_crawl))
+    print(
+        f"\n[节点1] 开始并发抓取与截图 {len(urls_to_crawl)} 个网站"
+        f"（{LIMITS.crawl_concurrency} 并发控制 + 自动清理弹窗）..."
+    )
+    sem = asyncio.Semaphore(LIMITS.crawl_concurrency)
 
     crawler = AsyncWebCrawler(config=BrowserConfig(ignore_https_errors=False, headless=True))
 
@@ -367,9 +378,12 @@ async def crawl_all_node(state: AgentState) -> dict:
                         delay_before_return_html=2.5,
                         screenshot_wait_for=1.5,
                         js_code=POPUP_DISMISS_JS,
-                        page_timeout=35000
+                        page_timeout=max(5000, (LIMITS.crawl_timeout_seconds - 5) * 1000),
                     )
-                    result = await asyncio.wait_for(crawler.arun(url=url, config=run_config), timeout=40.0)
+                    result = await asyncio.wait_for(
+                        crawler.arun(url=url, config=run_config),
+                        timeout=float(LIMITS.crawl_timeout_seconds),
+                    )
                     if result.success:
                         md_text = result.markdown.raw_markdown if hasattr(result.markdown, "raw_markdown") else str(result.markdown)
                         saved_screenshot = None
@@ -393,8 +407,9 @@ async def crawl_all_node(state: AgentState) -> dict:
                         print(f"  [失败] {url}：{error}")
                         return url, None, None, error
                 except asyncio.TimeoutError:
-                    print(f"  [超时] {url}：抓取超时 (40s)")
-                    return url, None, None, "抓取超时 (40s)"
+                    message = f"抓取超时 ({LIMITS.crawl_timeout_seconds}s)"
+                    print(f"  [超时] {url}：{message}")
+                    return url, None, None, message
                 except Exception as e:
                     error = compact_error(e)
                     print(f"  [异常] {url}：{error}")
@@ -419,6 +434,13 @@ async def crawl_all_node(state: AgentState) -> dict:
                 screenshots[url] = shot
 
     print(f"抓取完成：成功 {len(crawled)} 个，失败/异常 {len(errors)} 个，截图 {len(screenshots)} 张")
+    emit_run_event(
+        evidence.run_dir(state["run_id"]),
+        "crawl_completed",
+        succeeded=len(crawled),
+        failed=len(errors),
+        screenshots=len(screenshots),
+    )
     return {"crawled_contents": crawled, "crawled_screenshots": screenshots, "crawl_errors": errors}
 
 
@@ -429,12 +451,17 @@ async def compare_all_node(state: AgentState) -> dict:
     client, model = get_async_llm_client()
     tracker = TokenTracker()
     evidence = EvidenceStore(RUNTIME_ROOT)
+    emit_run_event(evidence.run_dir(state["run_id"]), "analysis_started")
+    budget = ModelBudget(
+        max_calls=LIMITS.max_model_calls,
+        max_tokens=LIMITS.max_total_tokens,
+    )
 
     comparisons = {}
     first_time_urls = []
     changed_urls = []
     screenshots = state.get("crawled_screenshots", {})
-    llm_sem = asyncio.Semaphore(4)
+    llm_sem = asyncio.Semaphore(LIMITS.llm_concurrency)
 
     async def process_one_site(url: str, content: str) -> tuple[str, str, bool, bool, object, dict]:
         site_key = get_site_key(url)
@@ -458,9 +485,12 @@ async def compare_all_node(state: AgentState) -> dict:
 {structured_output_instruction(mode="baseline")}"""
 
             async with llm_sem:
+                estimated_tokens = len(prompt) + 1024
+                await budget.reserve(estimated_tokens)
                 response = await call_structured_llm(
                     client, model=model, prompt=prompt, max_tokens=1024
                 )
+                await budget.record(response.usage, estimated_tokens)
             profile_analysis = parse_and_validate_analysis(
                 response.choices[0].message.content or "", new_source=content
             )
@@ -539,9 +569,12 @@ async def compare_all_node(state: AgentState) -> dict:
 {structured_output_instruction(mode="change")}"""
 
             async with llm_sem:
+                estimated_tokens = len(prompt) + 800
+                await budget.reserve(estimated_tokens)
                 response = await call_structured_llm(
                     client, model=model, prompt=prompt, max_tokens=800
                 )
+                await budget.record(response.usage, estimated_tokens)
             diff_analysis = parse_and_validate_analysis(
                 response.choices[0].message.content or "",
                 old_source=last.get("content", ""),
@@ -595,6 +628,15 @@ async def compare_all_node(state: AgentState) -> dict:
             changed_urls.append(url)
         tracker.add(usage)
 
+    emit_run_event(
+        evidence.run_dir(state["run_id"]),
+        "analysis_completed",
+        analyzed=len(comparisons),
+        changed=len(changed_urls),
+        model_calls=tracker.model_calls,
+        total_tokens=tracker.total_tokens,
+    )
+
     return {
         "comparisons": comparisons,
         "first_time_urls": first_time_urls,
@@ -608,6 +650,8 @@ async def compare_all_node(state: AgentState) -> dict:
 async def generate_report_node(state: AgentState) -> dict:
     print("\n[节点3] 汇总生成竞品日报（LLM 宏观提炼 + 全量竞品双轨拼装）...")
     tracker = TokenTracker(**state.get("token_usage", {}))
+    evidence = EvidenceStore(RUNTIME_ROOT)
+    emit_run_event(evidence.run_dir(state["run_id"]), "report_started")
 
     sites_brief = ""
     for url, result in state["comparisons"].items():
@@ -630,10 +674,19 @@ async def generate_report_node(state: AgentState) -> dict:
 - 维持常规监控，并按计划抽检正文与截图。"""
     else:
         client, model = get_async_llm_client()
+        budget = ModelBudget(
+            max_calls=LIMITS.max_model_calls,
+            max_tokens=LIMITS.max_total_tokens,
+            initial_calls=tracker.model_calls,
+            initial_tokens=tracker.total_tokens,
+        )
         try:
+            estimated_tokens = len(macro_prompt) + 1500
+            await budget.reserve(estimated_tokens)
             response = await call_structured_llm(
                 client, model=model, prompt=macro_prompt, max_tokens=1500
             )
+            await budget.record(response.usage, estimated_tokens)
             tracker.add(response.usage)
             macro_analysis = parse_and_validate_analysis(
                 response.choices[0].message.content or "", new_source=sites_brief
@@ -698,6 +751,13 @@ async def generate_report_node(state: AgentState) -> dict:
     report_path = os.path.join(REPORT_DIR, f"daily_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md")
     atomic_write_text(report_path, final_report)
     print(f"日报已保存至：{report_path}")
+    emit_run_event(
+        evidence.run_dir(state["run_id"]),
+        "report_completed",
+        report_path=str(report_path),
+        model_calls=tracker.model_calls,
+        total_tokens=tracker.total_tokens,
+    )
 
     has_substantive = bool(state.get("changed_urls"))
 
@@ -719,9 +779,7 @@ async def push_to_wecom_node(state: AgentState) -> dict:
     print("\n[节点4] 正在推送日报至企业微信...")
     load_dotenv(PROJECT_ROOT / ".env", override=True)
     webhook = os.getenv("WECOM_WEBHOOK", "")
-    date_str = datetime.now().strftime("%Y-%m-%d")
-
-    content = f"### 🚀 AIGC 竞品监控日报（{date_str}）\n\n" + state["daily_report"][:4000]
+    content = build_wecom_summary(state, max_chars=LIMITS.notification_max_chars)
 
     payload = {
         "msgtype": "markdown",
@@ -749,6 +807,19 @@ async def push_to_wecom_node(state: AgentState) -> dict:
 async def finalize_evidence_node(state: AgentState) -> dict:
     print("\n[节点5] 正在固化本次运行证据清单...")
     evidence = EvidenceStore(RUNTIME_ROOT)
+    run_directory = evidence.run_dir(state["run_id"])
+    evidence.record_run_summary(
+        state["run_id"],
+        {
+            "duration_seconds": round(time.monotonic() - state["started_monotonic"], 3),
+            "configured_sites": len(state["urls"]),
+            "successful_sites": len(state.get("comparisons", {})),
+            "changed_sites": len(state.get("changed_urls", [])),
+            "crawl_errors": len(state.get("crawl_errors", {})),
+            "token_usage": state.get("token_usage", {}),
+        },
+    )
+    emit_run_event(run_directory, "evidence_finalizing")
     manifest = evidence.finalize_run(state["run_id"], report_path=state.get("report_path"))
     retention_days, max_runs = configured_retention_policy()
     removed = evidence.prune_runs(retention_days=retention_days, max_runs=max_runs)
@@ -797,6 +868,7 @@ async def main():
 
     initial_state: AgentState = {
         "run_id": run_id,
+        "started_monotonic": time.monotonic(),
         "urls": urls,
         "crawled_contents": {},
         "crawled_screenshots": {},
@@ -811,8 +883,49 @@ async def main():
     }
 
     with AgentRunLock():
-        EvidenceStore(RUNTIME_ROOT).begin_run(run_id, urls)
-        await agent.ainvoke(initial_state)
+        evidence = EvidenceStore(RUNTIME_ROOT)
+        evidence.begin_run(run_id, urls)
+        emit_run_event(evidence.run_dir(run_id), "run_started", configured_sites=len(urls))
+        try:
+            await asyncio.wait_for(
+                agent.ainvoke(initial_state), timeout=float(LIMITS.run_timeout_seconds)
+            )
+        except asyncio.TimeoutError:
+            emit_run_event(
+                evidence.run_dir(run_id),
+                "run_timed_out",
+                timeout_seconds=LIMITS.run_timeout_seconds,
+            )
+            evidence.record_run_summary(
+                run_id,
+                {
+                    "status": "timed_out",
+                    "duration_seconds": round(time.monotonic() - initial_state["started_monotonic"], 3),
+                },
+            )
+            evidence.finalize_run(run_id, update_latest=False)
+            raise RuntimeError(f"整次运行超过 {LIMITS.run_timeout_seconds} 秒，已安全停止") from None
+        except Exception as exc:
+            summary_path = evidence.run_dir(run_id) / "run_summary.json"
+            manifest_path = evidence.run_dir(run_id) / "manifest.json"
+            if not manifest_path.exists():
+                emit_run_event(
+                    evidence.run_dir(run_id), "run_failed", error=compact_error(exc)
+                )
+            if not summary_path.exists():
+                evidence.record_run_summary(
+                    run_id,
+                    {
+                        "status": "failed",
+                        "duration_seconds": round(
+                            time.monotonic() - initial_state["started_monotonic"], 3
+                        ),
+                        "error": compact_error(exc),
+                    },
+                )
+            if not manifest_path.exists():
+                evidence.finalize_run(run_id, update_latest=False)
+            raise
 
     print("\n" + "=" * 60)
     print("【完整竞品日报已保存至 reports 目录】")
