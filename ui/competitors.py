@@ -3,16 +3,23 @@ UI 模块：竞品清单配置与深度档案库 (Competitor Suite - SaaS 旗舰
 """
 
 import os
-import glob
 import json
-import asyncio
+import html
 import streamlit as st
-from datetime import datetime
 
-DATA_DIR = "data"
-SNAPSHOT_DIR = os.path.join(DATA_DIR, "snapshots")
-SCREENSHOT_DIR = os.path.join(DATA_DIR, "screenshots")
-COMPETITORS_CONFIG_PATH = os.path.join(DATA_DIR, "competitors.json")
+from agent_utils import (
+    COMPETITORS_CONFIG_PATH,
+    DEMO_DATA_DIR,
+    PROJECT_ROOT,
+    SCREENSHOT_DIR,
+    SNAPSHOT_DIR,
+    atomic_write_json,
+    ensure_runtime_layout,
+    merged_artifact_files,
+    validate_public_http_url,
+)
+
+ensure_runtime_layout()
 
 DEFAULT_COMPETITOR_DATA = [
   {"url": "https://ai.699pic.com", "name": "摄图AI", "category": "图像/设计", "enabled": True},
@@ -36,7 +43,7 @@ DEFAULT_COMPETITOR_DATA = [
 
 def load_competitors_config() -> list[dict]:
     """读取 data/competitors.json 监控清单，如为空或不存在则自动基于默认清单初始化"""
-    if os.path.exists(COMPETITORS_CONFIG_PATH):
+    if COMPETITORS_CONFIG_PATH.exists():
         try:
             with open(COMPETITORS_CONFIG_PATH, "r", encoding="utf-8-sig") as f:
                 data = json.load(f)
@@ -50,13 +57,12 @@ def load_competitors_config() -> list[dict]:
 
 def save_competitors_config(items: list[dict]):
     """保存监控清单到 data/competitors.json"""
-    with open(COMPETITORS_CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(items, f, ensure_ascii=False, indent=2)
+    atomic_write_json(COMPETITORS_CONFIG_PATH, items)
 
 
 def load_all_competitor_profiles():
     """读取所有已建档的竞品快照"""
-    files = glob.glob(os.path.join(SNAPSHOT_DIR, "*_latest.json"))
+    files = merged_artifact_files(SNAPSHOT_DIR, DEMO_DATA_DIR / "snapshots", "*_latest.json")
     profiles = []
     for f in files:
         try:
@@ -136,21 +142,23 @@ def render_competitors():
                 
                 submitted = st.form_submit_button("💾 确认添加并保存", type="primary")
                 if submitted:
-                    if not new_url or not new_url.startswith("http"):
-                        st.error("请输入合法的网址（以 http:// 或 https:// 开头）")
+                    try:
+                        safe_url = validate_public_http_url(new_url)
+                    except ValueError as exc:
+                        st.error(f"网址不可用：{exc}")
                     else:
                         existing_urls = [it["url"].lower().rstrip("/") for it in config_items]
-                        if new_url.lower().rstrip("/") in existing_urls:
-                            st.warning(f"⚠️ 该网址 `{new_url}` 已存在于监控清单中！")
+                        if safe_url.lower().rstrip("/") in existing_urls:
+                            st.warning(f"⚠️ 该网址 `{safe_url}` 已存在于监控清单中！")
                         else:
                             config_items.append({
-                                "url": new_url.strip(),
-                                "name": new_name.strip() or new_url.replace("https://", "").split("/")[0],
+                                "url": safe_url,
+                                "name": new_name.strip() or safe_url.replace("https://", "").split("/")[0],
                                 "category": new_cat.strip() or "AIGC工具",
                                 "enabled": True
                             })
                             save_competitors_config(config_items)
-                            st.success(f"🎉 成功添加竞品：{new_url}")
+                            st.success(f"🎉 成功添加竞品：{safe_url}")
                             st.rerun()
 
         # 3. 批量多行文本编辑抽屉
@@ -168,9 +176,15 @@ def render_competitors():
                 bulk_submit = st.form_submit_button("💾 保存并更新全部清单", type="primary")
                 
                 if bulk_submit:
-                    lines = [line.strip() for line in bulk_text.splitlines() if line.strip() and line.strip().startswith("http")]
+                    lines = [line.strip() for line in bulk_text.splitlines() if line.strip()]
                     new_items = []
+                    invalid_urls = []
                     for u in lines:
+                        try:
+                            u = validate_public_http_url(u)
+                        except ValueError as exc:
+                            invalid_urls.append(f"{u}（{exc}）")
+                            continue
                         matched = next((it for it in config_items if it["url"].lower().rstrip("/") == u.lower().rstrip("/")), None)
                         if matched:
                             new_items.append(matched)
@@ -182,9 +196,12 @@ def render_competitors():
                                 "category": "AIGC工具",
                                 "enabled": True
                             })
-                    save_competitors_config(new_items)
-                    st.success(f"🎉 批量更新成功！当前有效监控站点数：{len(new_items)} 个")
-                    st.rerun()
+                    if invalid_urls:
+                        st.error("以下网址未保存：\n\n" + "\n\n".join(f"- {item}" for item in invalid_urls))
+                    else:
+                        save_competitors_config(new_items)
+                        st.success(f"🎉 批量更新成功！当前有效监控站点数：{len(new_items)} 个")
+                        st.rerun()
 
         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -286,17 +303,23 @@ def render_competitors():
                     st.markdown("### 📸 页面视觉存证截图")
                     domain = item["url"].replace("https://", "").replace("http://", "").split("/")[0]
                     shot_file = item["shot_path"]
+                    if shot_file and not os.path.isabs(shot_file):
+                        shot_file = str(PROJECT_ROOT / shot_file)
                     if not shot_file or not os.path.exists(shot_file):
                         shot_file = os.path.join(SCREENSHOT_DIR, f"{domain}_latest.png")
+                    if not os.path.exists(shot_file):
+                        shot_file = os.path.join(DEMO_DATA_DIR, "screenshots", f"{domain}_latest.png")
                     
                     if shot_file and os.path.exists(shot_file):
                         st.image(shot_file, caption=f"高清渲染截屏 · {domain}", use_container_width=True)
                     else:
                         st.caption("暂无本地存证截图")
 
+                    safe_url = html.escape(item["url"], quote=True)
+                    safe_domain = html.escape(domain)
                     st.markdown(f"""
 <div style="margin-top: 1rem; padding: 0.8rem; background: #F1F5F9; border-radius: 8px; border: 1px solid #E2E8F0;">
     <div style="font-size: 0.8rem; color: #475569;">🔗 竞品在线直达：</div>
-    <div style="font-weight: 600; margin-top: 2px;"><a href="{item['url']}" target="_blank" style="color: #2563EB; text-decoration: none;">访问 {domain} 官方主页 ↗</a></div>
+    <div style="font-weight: 600; margin-top: 2px;"><a href="{safe_url}" target="_blank" style="color: #2563EB; text-decoration: none;">访问 {safe_domain} 官方主页 ↗</a></div>
 </div>
 """, unsafe_allow_html=True)

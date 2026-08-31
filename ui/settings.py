@@ -3,13 +3,15 @@ UI 模块：模型与通知配置。
 """
 
 import os
-import re
+import json
 import httpx
 import streamlit as st
 from datetime import datetime
 from dotenv import load_dotenv
 
-ENV_FILE = ".env"
+from agent_utils import PROJECT_ROOT, atomic_write_text, ensure_single_line
+
+ENV_FILE = PROJECT_ROOT / ".env"
 
 
 def mask_key(key: str) -> str:
@@ -24,7 +26,7 @@ def mask_key(key: str) -> str:
 
 def load_env_dict():
     """读取 .env 文件键值对"""
-    load_dotenv(override=True)
+    load_dotenv(ENV_FILE, override=True)
     return {
         "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY") or os.getenv("DASHSCOPE_API_KEY", ""),
         "OPENAI_BASE_URL": os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
@@ -35,15 +37,19 @@ def load_env_dict():
 
 def save_env_dict(data: dict):
     """将键值对保存到本地 .env 文件。"""
-    content = f"""# AIGC 竞品监控 Agent 配置文件
-OPENAI_API_KEY={data.get('OPENAI_API_KEY', '')}
-OPENAI_BASE_URL={data.get('OPENAI_BASE_URL', 'https://dashscope.aliyuncs.com/compatible-mode/v1')}
-MODEL_NAME={data.get('MODEL_NAME', 'qwen3.7-flash')}
-WECOM_WEBHOOK={data.get('WECOM_WEBHOOK', '')}
-"""
-    with open(ENV_FILE, "w", encoding="utf-8") as f:
-        f.write(content)
-    load_dotenv(override=True)
+    values = {
+        "OPENAI_API_KEY": ensure_single_line(data.get("OPENAI_API_KEY", ""), "API Key"),
+        "OPENAI_BASE_URL": ensure_single_line(
+            data.get("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+            "Base URL",
+        ),
+        "MODEL_NAME": ensure_single_line(data.get("MODEL_NAME", "qwen3.7-flash"), "模型名称"),
+        "WECOM_WEBHOOK": ensure_single_line(data.get("WECOM_WEBHOOK", ""), "Webhook"),
+    }
+    lines = ["# AIGC 竞品监控 Agent 配置文件"]
+    lines.extend(f"{key}={json.dumps(value, ensure_ascii=False)}" for key, value in values.items())
+    atomic_write_text(ENV_FILE, "\n".join(lines) + "\n")
+    load_dotenv(ENV_FILE, override=True)
 
 
 def test_wecom_webhook(webhook: str) -> tuple[bool, str]:
@@ -59,6 +65,7 @@ def test_wecom_webhook(webhook: str) -> tuple[bool, str]:
     }
     try:
         resp = httpx.post(webhook, json=payload, timeout=10.0)
+        resp.raise_for_status()
         res = resp.json()
         if res.get("errcode") == 0:
             return True, "推送测试成功！请查看企业微信群。"
@@ -139,9 +146,13 @@ def render_settings():
                 "MODEL_NAME": final_model.strip(),
                 "WECOM_WEBHOOK": wecom_webhook.strip()
             }
-            save_env_dict(new_config)
-            st.success("✅ 配置已保存到本地 .env 文件并生效。")
-            st.rerun()
+            try:
+                save_env_dict(new_config)
+            except ValueError as exc:
+                st.error(f"配置未保存：{exc}")
+            else:
+                st.success("✅ 配置已保存到本地 .env 文件并生效。")
+                st.rerun()
 
     # 3. 独立连通性测试区
     st.markdown("---")

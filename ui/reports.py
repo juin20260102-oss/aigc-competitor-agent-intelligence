@@ -3,15 +3,14 @@ UI 模块：历史日报查看与分发。
 """
 
 import os
-import glob
 import httpx
 import streamlit as st
 from datetime import datetime
 from dotenv import load_dotenv
 
-load_dotenv()
+from agent_utils import DEMO_REPORT_DIR, PROJECT_ROOT, REPORT_DIR, merged_artifact_files
 
-REPORT_DIR = "reports"
+load_dotenv(PROJECT_ROOT / ".env")
 
 
 def send_to_wecom(content: str, webhook: str) -> tuple[bool, str]:
@@ -28,6 +27,7 @@ def send_to_wecom(content: str, webhook: str) -> tuple[bool, str]:
     }
     try:
         resp = httpx.post(webhook, json=payload, timeout=10.0)
+        resp.raise_for_status()
         res = resp.json()
         if res.get("errcode") == 0:
             return True, "推送成功"
@@ -40,7 +40,11 @@ def render_reports():
     st.markdown('<div class="hero-title">📑 每日竞品情报中心</div>', unsafe_allow_html=True)
     st.markdown('<div class="hero-subtitle">查看历史日报、搜索关键词、下载 Markdown，并对模型结论进行人工复核</div>', unsafe_allow_html=True)
 
-    report_files = sorted(glob.glob(os.path.join(REPORT_DIR, "daily_report_*.md")), reverse=True)
+    report_files = sorted(
+        merged_artifact_files(REPORT_DIR, DEMO_REPORT_DIR, "daily_report_*.md"),
+        key=os.path.getmtime,
+        reverse=True,
+    )
 
     if not report_files:
         st.info("💡 报告目录下暂无生成的日报，请先前往【监控大盘】启动一次全量监控。")
