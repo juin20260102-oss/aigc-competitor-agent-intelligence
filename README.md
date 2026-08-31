@@ -116,12 +116,16 @@ cp .env.example .env
 OPENAI_API_KEY=your_api_key
 OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 MODEL_NAME=qwen3.7-flash
+MODEL_BASE_URL_ALLOWLIST=https://dashscope.aliyuncs.com/compatible-mode/v1,https://api.openai.com/v1
 
 # 可选
 WECOM_WEBHOOK=
+APP_ACCESS_PASSWORD=
 ```
 
 运行截图、快照、日志和日报默认写入项目下的 `runtime/`。如需写到其他位置，可配置 `AGENT_RUNTIME_DIR`；仓库自带的 `data/` 与 `reports/` 只作为演示数据读取，不会再被新运行覆盖。
+
+控制台默认只监听 `127.0.0.1`。如需经局域网或公网访问，应在前方部署带 TLS 与身份认证的反向代理，并设置 `APP_ACCESS_PASSWORD` 作为第二道访问保护。设置页只能保存 `MODEL_BASE_URL_ALLOWLIST` 中的模型端点；修改端点时必须同时重新输入 API Key。企业微信 Webhook 仅接受官方 `qyapi.weixin.qq.com` HTTPS 地址。
 
 示例默认使用阿里云百炼的 OpenAI 兼容端点，也可以替换为其他兼容 Chat Completions API。`.env` 已加入 Git 忽略列表。Streamlit 设置页只对 Key 进行掩码显示，实际内容仍以明文形式保存在本地 `.env` 文件中。
 

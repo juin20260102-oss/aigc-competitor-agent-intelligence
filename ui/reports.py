@@ -8,7 +8,13 @@ import streamlit as st
 from datetime import datetime
 from dotenv import load_dotenv
 
-from agent_utils import DEMO_REPORT_DIR, PROJECT_ROOT, REPORT_DIR, merged_artifact_files
+from agent_utils import (
+    DEMO_REPORT_DIR,
+    PROJECT_ROOT,
+    REPORT_DIR,
+    merged_artifact_files,
+    validate_wecom_webhook,
+)
 
 load_dotenv(PROJECT_ROOT / ".env")
 
@@ -17,6 +23,10 @@ def send_to_wecom(content: str, webhook: str) -> tuple[bool, str]:
     """发送 Markdown 报告到企业微信"""
     if not webhook:
         return False, "未配置企业微信 Webhook"
+    try:
+        webhook = validate_wecom_webhook(webhook)
+    except ValueError as exc:
+        return False, str(exc)
     
     date_str = datetime.now().strftime("%Y-%m-%d")
     payload = {

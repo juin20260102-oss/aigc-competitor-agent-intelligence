@@ -14,7 +14,7 @@ from datetime import datetime
 from dataclasses import dataclass, asdict
 from typing import TypedDict
 from openai import AsyncOpenAI
-from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
 from langgraph.graph import StateGraph, END
 from dotenv import load_dotenv
 
@@ -34,7 +34,9 @@ from agent_utils import (
     content_hash,
     ensure_runtime_layout,
     site_key_for_url,
+    validate_model_base_url,
     validate_public_http_url,
+    validate_wecom_webhook,
 )
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -152,7 +154,9 @@ def get_async_llm_client() -> tuple[AsyncOpenAI, str]:
     """获取异步 OpenAI 兼容客户端与模型配置"""
     load_dotenv(PROJECT_ROOT / ".env", override=True)
     api_key = os.getenv("OPENAI_API_KEY") or os.getenv("DASHSCOPE_API_KEY")
-    base_url = os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+    base_url = validate_model_base_url(
+        os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+    )
     model = os.getenv("MODEL_NAME", "qwen3.7-flash")
 
     if not api_key:
@@ -271,7 +275,26 @@ async def crawl_all_node(state: AgentState) -> dict:
     print(f"\n[节点1] 开始并发抓取与截图 {len(urls_to_crawl)} 个网站（3 并发控制 + 自动清理弹窗）...")
     sem = asyncio.Semaphore(3)
 
-    async with AsyncWebCrawler() as crawler:
+    crawler = AsyncWebCrawler(config=BrowserConfig(ignore_https_errors=False, headless=True))
+
+    async def install_navigation_guard(page, **_kwargs):
+        async def guard_navigation(route):
+            request = route.request
+            if request.is_navigation_request():
+                try:
+                    await asyncio.to_thread(validate_public_http_url, request.url, resolve_dns=True)
+                except ValueError as exc:
+                    print(f"  [安全拦截] {request.url}：{exc}")
+                    await route.abort("blockedbyclient")
+                    return
+            await route.continue_()
+
+        await page.route("**/*", guard_navigation)
+        return page
+
+    crawler.crawler_strategy.set_hook("on_page_context_created", install_navigation_guard)
+
+    async with crawler:
         async def fetch_one(url: str) -> tuple[str, str | None, str | None, str | None]:
             async with sem:
                 site_key = get_site_key(url)
@@ -597,6 +620,7 @@ async def push_to_wecom_node(state: AgentState) -> dict:
     }
 
     try:
+        webhook = validate_wecom_webhook(webhook)
         async with httpx.AsyncClient() as client:
             resp = await client.post(webhook, json=payload, timeout=10.0)
             resp.raise_for_status()
