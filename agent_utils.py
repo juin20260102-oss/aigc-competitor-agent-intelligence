@@ -12,10 +12,9 @@ import tempfile
 import time
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from difflib import SequenceMatcher, unified_diff
+from difflib import SequenceMatcher
 from pathlib import Path
-from urllib.parse import urlsplit
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, parse_qsl, urlencode, urlsplit, urlunsplit
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -94,16 +93,35 @@ def atomic_write_json(path: str | Path, payload: object) -> None:
 
 
 _IMAGE_RE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
-_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 _SPACE_RE = re.compile(r"[ \t\u00a0]+")
 _BLANK_RE = re.compile(r"\n{3,}")
+_TRACKING_QUERY_KEYS = {"fbclid", "gclid", "ref", "referrer", "source", "trace"}
+
+
+def _normalized_link(match: re.Match[str]) -> str:
+    label, target = match.groups()
+    parsed = urlsplit(target.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return f"[{label}]({target.strip()})"
+    query = sorted(
+        [
+            (key, value)
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+            if not key.lower().startswith("utm_") and key.lower() not in _TRACKING_QUERY_KEYS
+        ]
+    )
+    canonical = urlunsplit(
+        (parsed.scheme.lower(), parsed.netloc.lower(), parsed.path or "/", urlencode(query), "")
+    )
+    return f"[{label}]({canonical})"
 
 
 def normalize_content(content: str) -> str:
-    """Reduce crawler noise while preserving user-visible wording and prices."""
+    """Reduce crawler noise while preserving wording, prices, and link destinations."""
     text = content.replace("\ufeff", "").replace("\u200b", "")
     text = _IMAGE_RE.sub(lambda match: match.group(1), text)
-    text = _LINK_RE.sub(lambda match: match.group(1), text)
+    text = _LINK_RE.sub(_normalized_link, text)
     normalized_lines = []
     for raw_line in text.splitlines():
         line = _SPACE_RE.sub(" ", raw_line).strip()
@@ -116,9 +134,58 @@ def content_hash(content: str) -> str:
     return hashlib.sha256(normalize_content(content).encode("utf-8")).hexdigest()
 
 
-def site_key_for_url(url: str) -> str:
+def legacy_site_key_for_url(url: str) -> str:
     clean = re.sub(r"^https?://", "", url).rstrip("/")
     return re.sub(r"[^\w\-.]", "_", clean)
+
+
+def site_key_for_url(url: str, *, max_length: int = 120) -> str:
+    """Return a bounded, collision-resistant key while retaining a readable prefix."""
+    parsed = urlsplit(url.strip())
+    host = (parsed.hostname or "unknown").encode("idna").decode("ascii").lower()
+    port = f"-{parsed.port}" if parsed.port else ""
+    identity = urlunsplit((parsed.scheme.lower(), f"{host}{port}", parsed.path or "/", parsed.query, ""))
+    readable = re.sub(r"[^a-zA-Z0-9.-]+", "_", f"{host}{port}{parsed.path}").strip("_.-")
+    readable = readable or "site"
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
+    prefix_length = max(1, max_length - len(digest) - 2)
+    return f"{readable[:prefix_length]}--{digest}"
+
+
+def site_key_candidates(url: str) -> tuple[str, ...]:
+    """Return the current key followed by legacy aliases for read compatibility."""
+    current = site_key_for_url(url)
+    legacy = legacy_site_key_for_url(url)
+    return (current,) if current == legacy else (current, legacy)
+
+
+def resolve_site_artifact(
+    runtime_dir: str | Path,
+    demo_dir: str | Path,
+    url: str,
+    suffix: str,
+    *,
+    migrate_legacy: bool = True,
+) -> Path | None:
+    """Resolve a current/legacy artifact and copy runtime legacy data to the new key."""
+    runtime = Path(runtime_dir)
+    demo = Path(demo_dir)
+    current, *aliases = site_key_candidates(url)
+    target = runtime / f"{current}{suffix}"
+    if target.exists():
+        return target
+    for key in (*aliases, current):
+        candidate = runtime / f"{key}{suffix}"
+        if candidate.exists():
+            if migrate_legacy and key != current:
+                atomic_write_bytes(target, candidate.read_bytes())
+                return target
+            return candidate
+    for key in (current, *aliases):
+        candidate = demo / f"{key}{suffix}"
+        if candidate.exists():
+            return candidate
+    return None
 
 
 @dataclass(frozen=True)
@@ -142,44 +209,55 @@ def assess_change(
     if old == new:
         return ChangeAssessment(False, 1.0, 0, "正文规范化后完全一致。")
 
-    matcher = SequenceMatcher(None, old, new, autojunk=False)
-    similarity = matcher.ratio()
-    changed_characters = round(max(len(old), len(new)) * (1 - similarity))
-    relative_change = 1 - similarity
-    diff_lines = unified_diff(
-        old.splitlines(),
-        new.splitlines(),
-        fromfile="previous",
-        tofile="current",
-        lineterm="",
-        n=2,
-    )
-    diff_context = "\n".join(diff_lines)
+    old_lines = old.splitlines()
+    new_lines = new.splitlines()
+    matcher = SequenceMatcher(None, old_lines, new_lines, autojunk=True)
     changed_fragments = []
     change_contexts = []
+    diff_parts = ["--- previous", "+++ current"]
+    changed_characters = 0
     for tag, old_start, old_end, new_start, new_end in matcher.get_opcodes():
         if tag == "equal":
             continue
-        changed_fragments.extend((old[old_start:old_end], new[new_start:new_end]))
-        change_contexts.extend(
-            (
-                old[max(0, old_start - 24) : min(len(old), old_end + 24)],
-                new[max(0, new_start - 24) : min(len(new), new_end + 24)],
-            )
-        )
+        old_block = "\n".join(old_lines[old_start:old_end])
+        new_block = "\n".join(new_lines[new_start:new_end])
+        prefix = os.path.commonprefix((old_block, new_block))
+        old_tail = old_block[len(prefix) :]
+        new_tail = new_block[len(prefix) :]
+        suffix = os.path.commonprefix((old_tail[::-1], new_tail[::-1]))[::-1]
+        if suffix:
+            old_changed = old_tail[: -len(suffix)]
+            new_changed = new_tail[: -len(suffix)]
+        else:
+            old_changed, new_changed = old_tail, new_tail
+        changed_characters += max(len(old_changed), len(new_changed))
+        changed_fragments.extend((old_changed, new_changed))
+        nearby = (prefix[-80:] + old_changed + new_changed + suffix[:80])
+        change_contexts.append(nearby)
+        if old_changed:
+            diff_parts.append(f"- {(prefix[-160:] + old_changed + suffix[:160])[:1200]}")
+        if new_changed:
+            diff_parts.append(f"+ {(prefix[-160:] + new_changed + suffix[:160])[:1200]}")
+
+    document_length = max(len(old), len(new), 1)
+    relative_change = changed_characters / document_length
+    similarity = max(0.0, 1.0 - relative_change)
+    diff_context = "\n".join(diff_parts)
     fragment_text = " ".join(changed_fragments).strip()
     context_text = " ".join(change_contexts)
     numeric_only_change = bool(fragment_text) and not re.search(r"[^\W\d_]", fragment_text)
     if numeric_only_change:
         signal_pattern = r"价格|定价|套餐|折扣|积分|额度|版本|元|¥|￥|%"
     else:
-        signal_pattern = r"价格|定价|套餐|免费|折扣|积分|额度|版本|上线|发布|新增|下线|功能|API|模型"
+        signal_pattern = r"价格|定价|套餐|免费|折扣|积分|额度|版本|上线|发布|新增|下线|功能|API|模型|https?://"
     high_signal = bool(re.search(signal_pattern, context_text, flags=re.IGNORECASE))
     changed = (
         changed_characters >= min_changed_characters and relative_change >= min_change_ratio
     ) or (high_signal and changed_characters >= 1)
     if len(diff_context) > max_diff_characters:
-        diff_context = diff_context[:max_diff_characters] + "\n...（差异内容已截断）"
+        marker = "\n...（中间差异内容已截断）...\n"
+        side = max(1, (max_diff_characters - len(marker)) // 2)
+        diff_context = diff_context[:side] + marker + diff_context[-side:]
     return ChangeAssessment(changed, similarity, changed_characters, diff_context)
 
 
