@@ -1,6 +1,7 @@
 import json
 import socket
 import tempfile
+import time
 import tomllib
 import unittest
 from pathlib import Path
@@ -13,6 +14,7 @@ from agent_utils import (
     compact_error,
     ensure_single_line,
     normalize_content,
+    resolve_site_artifact,
     site_key_for_url,
     validate_model_base_url,
     validate_public_http_url,
@@ -35,6 +37,13 @@ class ContentChangeTests(unittest.TestCase):
         self.assertTrue(result.changed)
         self.assertIn("团队协作", result.diff_context)
 
+    def test_meaningful_link_target_change_is_detected(self):
+        old = "[价格说明](https://example.com/pricing/basic)"
+        new = "[价格说明](https://example.com/pricing/pro)"
+        result = assess_change(old, new)
+        self.assertTrue(result.changed)
+        self.assertIn("/pro", result.diff_context)
+
     def test_small_noise_is_skipped(self):
         old = "这是长期稳定的产品介绍和功能说明，内容不会频繁变化。" * 20
         new = old + " 1"
@@ -44,6 +53,14 @@ class ContentChangeTests(unittest.TestCase):
         stable = "长期稳定的产品介绍与帮助中心说明。\n" * 500
         result = assess_change(stable + "基础套餐价格 99 元", stable + "基础套餐价格 199 元")
         self.assertTrue(result.changed)
+
+    def test_large_page_small_change_completes_quickly(self):
+        stable = "长期稳定的产品功能介绍。\n" * 8000
+        started = time.perf_counter()
+        result = assess_change(stable + "基础套餐 99 元", stable + "基础套餐 199 元")
+        elapsed = time.perf_counter() - started
+        self.assertTrue(result.changed)
+        self.assertLess(elapsed, 0.5)
 
 
 class UrlSafetyTests(unittest.TestCase):
@@ -121,7 +138,25 @@ class PersistenceAndLockTests(unittest.TestCase):
         self.assertIn("\\|", message)
 
     def test_site_key_preserves_path_identity(self):
-        self.assertEqual(site_key_for_url("https://example.com/products/a"), "example.com_products_a")
+        key = site_key_for_url("https://example.com/products/a")
+        self.assertTrue(key.startswith("example.com_products_a--"))
+        self.assertLessEqual(len(key), 120)
+
+    def test_site_key_avoids_legacy_path_collision(self):
+        self.assertNotEqual(
+            site_key_for_url("https://example.com/a_b"),
+            site_key_for_url("https://example.com/a/b"),
+        )
+
+    def test_legacy_runtime_artifact_is_copied_to_current_key(self):
+        url = "https://example.com/products/a"
+        with tempfile.TemporaryDirectory() as runtime, tempfile.TemporaryDirectory() as demo:
+            legacy = Path(runtime) / "example.com_products_a_latest.json"
+            legacy.write_text('{"legacy": true}', encoding="utf-8")
+            resolved = resolve_site_artifact(runtime, demo, url, "_latest.json")
+            self.assertIsNotNone(resolved)
+            self.assertNotEqual(resolved, legacy)
+            self.assertEqual(resolved.read_bytes(), legacy.read_bytes())
 
     def test_unmatched_model_quote_is_flagged(self):
         result = verify_evidence_quotes("结论【依据：页面原文“并不存在的功能”】", "真实页面正文")

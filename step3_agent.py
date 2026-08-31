@@ -33,6 +33,7 @@ from agent_utils import (
     compact_error,
     content_hash,
     ensure_runtime_layout,
+    resolve_site_artifact,
     site_key_for_url,
     validate_model_base_url,
     validate_public_http_url,
@@ -175,19 +176,26 @@ def get_site_key(url: str) -> str:
 def get_snapshot_path(site_key: str) -> str:
     return str(SNAPSHOT_DIR / f"{site_key}_latest.json")
 
-def load_last_snapshot(site_key: str) -> dict | None:
-    path = get_snapshot_path(site_key)
-    if not os.path.exists(path):
-        demo_path = DEMO_DATA_DIR / "snapshots" / f"{site_key}_latest.json"
-        if not demo_path.exists():
-            return None
-        path = str(demo_path)
+def load_last_snapshot(site_key: str, url: str | None = None) -> dict | None:
+    path = (
+        resolve_site_artifact(SNAPSHOT_DIR, DEMO_DATA_DIR / "snapshots", url, "_latest.json")
+        if url
+        else None
+    )
+    if path is None:
+        direct_path = SNAPSHOT_DIR / f"{site_key}_latest.json"
+        if not direct_path.exists():
+            demo_path = DEMO_DATA_DIR / "snapshots" / f"{site_key}_latest.json"
+            if not demo_path.exists():
+                return None
+            direct_path = demo_path
+        path = direct_path
     with open(path, "r", encoding="utf-8-sig") as f:
         return json.load(f)
 
 def save_snapshot(site_key: str, url: str, content: str, profile: str | None = None, screenshot_path: str | None = None, update_record: dict | None = None):
     """保存快照与竞品完整档案"""
-    existing = load_last_snapshot(site_key) or {}
+    existing = load_last_snapshot(site_key, url) or {}
     history = existing.get("update_history", [])
     if update_record:
         history.append(update_record)
@@ -373,7 +381,7 @@ async def compare_all_node(state: AgentState) -> dict:
 
     async def process_one_site(url: str, content: str) -> tuple[str, str, bool, bool, object]:
         site_key = get_site_key(url)
-        last = load_last_snapshot(site_key)
+        last = load_last_snapshot(site_key, url)
         shot_path = screenshots.get(url)
         has_baseline_profile = last is not None and bool(last.get("profile"))
 

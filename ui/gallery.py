@@ -11,7 +11,7 @@ from agent_utils import (
     DEMO_DATA_DIR,
     SCREENSHOT_DIR,
     merged_artifact_files,
-    site_key_for_url,
+    site_key_candidates,
 )
 from ui.competitors import load_competitors_config
 
@@ -24,7 +24,11 @@ def render_gallery():
         path for path in merged_artifact_files(SCREENSHOT_DIR, DEMO_DATA_DIR / "screenshots", "*.png")
         if not os.path.basename(path).startswith("test_")
     )
-    url_by_key = {site_key_for_url(item["url"]): item["url"] for item in load_competitors_config()}
+    url_by_key = {
+        key: item["url"]
+        for item in load_competitors_config()
+        for key in site_key_candidates(item["url"])
+    }
 
     if not screenshots:
         st.info("💡 暂无本地截图存证，请先前往【监控大盘】运行一次全量监控。")

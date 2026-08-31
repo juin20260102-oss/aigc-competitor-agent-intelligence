@@ -28,6 +28,8 @@ from agent_utils import (
     atomic_write_text,
     content_hash,
     ensure_runtime_layout,
+    resolve_site_artifact,
+    site_key_for_url,
     validate_model_base_url,
     validate_public_http_url,
 )
@@ -66,12 +68,17 @@ def get_snapshot_path(domain: str) -> str:
     return str(SNAPSHOT_DIR / f"{domain}_latest.json")
 
 
-def load_last_snapshot(domain: str) -> dict | None:
+def load_last_snapshot(domain: str, url: str | None = None) -> dict | None:
     """
     读取上一次的快照。
     返回 None 说明是第一次抓取，没有历史数据可比较。
     """
-    path = get_snapshot_path(domain)
+    resolved = (
+        resolve_site_artifact(SNAPSHOT_DIR, DEMO_DATA_DIR / "snapshots", url, "_latest.json")
+        if url
+        else None
+    )
+    path = str(resolved) if resolved else get_snapshot_path(domain)
     if not os.path.exists(path):
         demo_path = DEMO_DATA_DIR / "snapshots" / f"{domain}_latest.json"
         if not demo_path.exists():
@@ -85,7 +92,7 @@ def save_snapshot(domain: str, url: str, content: str, profile: str | None = Non
     """
     保存本次抓取的快照与竞品深度档案。
     """
-    existing = load_last_snapshot(domain) or {}
+    existing = load_last_snapshot(domain, url) or {}
     history = existing.get("update_history", [])
     if update_record:
         history.append(update_record)
@@ -109,7 +116,7 @@ def save_snapshot(domain: str, url: str, content: str, profile: str | None = Non
 async def fetch_page(url: str) -> tuple[str, str | None]:
     print(f"正在抓取：{url}")
     url = await asyncio.to_thread(validate_public_http_url, url, resolve_dns=True)
-    domain = url.replace("https://", "").replace("http://", "").split("/")[0]
+    domain = site_key_for_url(url)
     screenshot_path = str(SCREENSHOT_DIR / f"{domain}_latest.png")
 
     try:
@@ -268,10 +275,10 @@ async def main():
     target_url = "https://www.midjourney.com"
     tracker = TokenTracker()
 
-    domain = target_url.replace("https://", "").replace("http://", "").split("/")[0]
+    domain = site_key_for_url(target_url)
 
     # 1. 读取上次快照
-    last_snapshot = load_last_snapshot(domain)
+    last_snapshot = load_last_snapshot(domain, target_url)
 
     # 2. 抓取当前内容与截图
     current_content, screenshot_path = await fetch_page(target_url)
