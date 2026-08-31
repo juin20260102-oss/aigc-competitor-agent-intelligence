@@ -40,12 +40,13 @@ flowchart LR
     G --> H[下载或推送]
 ```
 
-核心流程由 4 个 LangGraph 节点组成：
+核心流程由 5 个 LangGraph 节点组成：
 
 1. `crawl_all`：抓取启用站点并保存截图；
 2. `compare_all`：建立基准画像或执行增量对比；
 3. `generate_report`：汇总本次变化并生成日报；
 4. `push_to_wecom`：根据配置决定是否推送企业微信。
+5. `finalize_evidence`：固化运行摘要、哈希清单与最新运行索引。
 
 当前工作流为线性流程，LangGraph 主要用于管理节点顺序和共享状态。
 
@@ -84,7 +85,7 @@ Windows：
 ```powershell
 python -m venv .venv
 .venv\Scripts\activate
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.lock
 crawl4ai-setup
 ```
 
@@ -93,7 +94,7 @@ macOS / Linux：
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.lock
 crawl4ai-setup
 ```
 
@@ -147,6 +148,8 @@ python step3_agent.py
 ```
 
 运行时间与模型消耗取决于启用站点数量、网页响应速度、页面长度和模型配置。首次使用时建议只启用少量站点测试。
+
+开发时可使用宽松约束的 `requirements.txt`；部署、CI 和复现环境使用由 `tools/generate_requirements_lock.py` 生成的精确 `requirements.lock`。升级依赖后，在已验证环境运行该脚本并一并提交锁文件。
 
 ## 运行模式
 

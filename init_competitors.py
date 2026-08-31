@@ -1,4 +1,5 @@
-﻿import json, os
+﻿import json
+import os
 
 COMPETITORS_CONFIG_PATH = os.path.join("data", "competitors.json")
 
