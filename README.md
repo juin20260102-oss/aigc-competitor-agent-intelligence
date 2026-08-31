@@ -184,11 +184,15 @@ python step3_agent.py
 | `runtime/data/snapshots/*_latest.json` | 最新正文、规范化哈希、基准画像和变化记录 |
 | `runtime/data/screenshots/*_latest.png` | 最近一次页面截图 |
 | `runtime/data/logs/last_run.log` | 工作台最近一次执行日志 |
+| `runtime/runs/<run_id>/<site_key>/` | 不可变正文、规范化文本、截图、结构化分析与哈希清单 |
+| `runtime/data/latest_run.json` | 最近一次完整运行清单的位置与 SHA-256 |
 | `runtime/reports/daily_report_*.md` | 带时间戳的综合日报 |
 
 快照和截图使用 `*_latest` 文件名：截图在页面抓取成功后覆盖，快照仅在对应模型分析成功后覆盖；日报按运行时间单独保存。
 
 正文预筛采用规范化哈希与按行差异算法：忽略图片地址及常见追踪参数，但保留有业务意义的链接目标、价格和版本号。站点文件名由可读前缀与 URL 哈希组成，以避免路径碰撞和超长文件名；首次读取旧命名的运行时快照时会复制为新名称，旧文件仍保留。
+
+每次完整运行还会生成独立的不可变证据目录，`manifest.json` 记录所有文件的大小与 SHA-256。旧 `data/snapshots` 可先运行 `python migrate_legacy_evidence.py` 预览，再加 `--apply` 执行只复制迁移。保留策略默认关闭；仅在显式设置 `EVIDENCE_RETENTION_DAYS` 或 `EVIDENCE_MAX_RUNS` 为正数时清理已完成的旧运行。
 
 ### 失败与覆盖规则
 

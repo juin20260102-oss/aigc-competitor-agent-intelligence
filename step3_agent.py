@@ -24,12 +24,14 @@ from analysis_schema import (
     render_analysis_markdown,
     structured_output_instruction,
 )
+from evidence_store import EvidenceStore, configured_retention_policy, new_run_id
 
 from agent_utils import (
     AgentRunLock,
     COMPETITORS_CONFIG_PATH,
     DEMO_DATA_DIR,
     REPORT_DIR,
+    RUNTIME_ROOT,
     SCREENSHOT_DIR,
     SNAPSHOT_DIR,
     PROJECT_ROOT,
@@ -308,6 +310,7 @@ def extract_latest_change(entry: str) -> str:
 # ── State：LangGraph 共享状态 ────────────────────────────────────
 
 class AgentState(TypedDict):
+    run_id: str                       # 不可变证据运行标识
     urls: list[str]                    # 要监控的网址列表
     crawled_contents: dict[str, str]   # 抓取结果：{url: 内容}
     crawled_screenshots: dict[str, str]# 网页截图：{url: 截图路径}
@@ -317,6 +320,7 @@ class AgentState(TypedDict):
     changed_urls: list[str]            # 确认存在实质变化的网址列表
     token_usage: dict                  # Token 统计数据
     daily_report: str                  # 最终汇总日报
+    report_path: str                   # 本次日报路径
     should_push: bool                  # 是否需要推送
 
 
@@ -328,6 +332,7 @@ class AgentState(TypedDict):
 
 async def crawl_all_node(state: AgentState) -> dict:
     urls_to_crawl = state["urls"]
+    evidence = EvidenceStore(RUNTIME_ROOT)
     print(f"\n[节点1] 开始并发抓取与截图 {len(urls_to_crawl)} 个网站（3 并发控制 + 自动清理弹窗）...")
     sem = asyncio.Semaphore(3)
 
@@ -401,6 +406,9 @@ async def crawl_all_node(state: AgentState) -> dict:
     screenshots = {}
     errors = {}
     for url, content, shot, error in results:
+        evidence.record_crawl(
+            state["run_id"], url, content=content, screenshot_path=shot, error=error
+        )
         if content:
             crawled[url] = content
             if shot:
@@ -420,6 +428,7 @@ async def compare_all_node(state: AgentState) -> dict:
     print("\n[节点2] 开始并发执行大模型双轨解析与对比（基准画像+增量追踪）...")
     client, model = get_async_llm_client()
     tracker = TokenTracker()
+    evidence = EvidenceStore(RUNTIME_ROOT)
 
     comparisons = {}
     first_time_urls = []
@@ -427,7 +436,7 @@ async def compare_all_node(state: AgentState) -> dict:
     screenshots = state.get("crawled_screenshots", {})
     llm_sem = asyncio.Semaphore(4)
 
-    async def process_one_site(url: str, content: str) -> tuple[str, str, bool, bool, object]:
+    async def process_one_site(url: str, content: str) -> tuple[str, str, bool, bool, object, dict]:
         site_key = get_site_key(url)
         last = load_last_snapshot(site_key, url)
         shot_path = screenshots.get(url)
@@ -474,7 +483,14 @@ async def compare_all_node(state: AgentState) -> dict:
                 profile_analysis=profile_analysis.to_dict(),
             )
             print(f"  [完成建档] {url}")
-            return url, full_entry, True, True, response.usage
+            return (
+                url,
+                full_entry,
+                True,
+                True,
+                response.usage,
+                {"mode": "baseline", "result": profile_analysis.to_dict()},
+            )
 
         else:
             assessment = assess_change(last.get("content", ""), content)
@@ -492,7 +508,18 @@ async def compare_all_node(state: AgentState) -> dict:
                     site_key, url, content, profile=last["profile"], screenshot_path=shot_path
                 )
                 print(f"  [跳过模型] {site_key}：规范化后无实质变化")
-                return url, full_entry, False, False, None
+                return (
+                    url,
+                    full_entry,
+                    False,
+                    False,
+                    None,
+                    {
+                        "mode": "unchanged",
+                        "similarity": assessment.similarity,
+                        "changed_characters": assessment.changed_characters,
+                    },
+                )
 
             prompt = f"""任务：分析同一网站两次抓取之间的实质变化。
 
@@ -536,7 +563,14 @@ async def compare_all_node(state: AgentState) -> dict:
             }
             save_snapshot(site_key, url, content, profile=last["profile"], screenshot_path=shot_path, update_record=update_record)
             print(f"  [完成比对] {site_key}")
-            return url, full_entry, False, True, response.usage
+            return (
+                url,
+                full_entry,
+                False,
+                True,
+                response.usage,
+                {"mode": "change", "result": diff_analysis.to_dict()},
+            )
 
     site_inputs = list(state["crawled_contents"].items())
     tasks = [process_one_site(url, content) for url, content in site_inputs]
@@ -546,8 +580,14 @@ async def compare_all_node(state: AgentState) -> dict:
         if isinstance(result, Exception):
             print(f"  [分析失败] {source_url}：{result}")
             comparisons[source_url] = "#### 【最新版本迭代与动态追踪】\n- **状态**：模型分析失败，已保留抓取结果，请人工复核或稍后重试。"
+            evidence.record_analysis(
+                state["run_id"],
+                source_url,
+                {"mode": "failed", "error": compact_error(result)},
+            )
             continue
-        url, entry, is_first, is_changed, usage = result
+        url, entry, is_first, is_changed, usage, analysis_payload = result
+        evidence.record_analysis(state["run_id"], url, analysis_payload)
         comparisons[url] = entry
         if is_first:
             first_time_urls.append(url)
@@ -663,6 +703,7 @@ async def generate_report_node(state: AgentState) -> dict:
 
     return {
         "daily_report": final_report,
+        "report_path": report_path,
         "token_usage": asdict(tracker),
         "should_push": has_substantive and bool(WECOM_WEBHOOK)
     }
@@ -705,6 +746,18 @@ async def push_to_wecom_node(state: AgentState) -> dict:
     return {}
 
 
+async def finalize_evidence_node(state: AgentState) -> dict:
+    print("\n[节点5] 正在固化本次运行证据清单...")
+    evidence = EvidenceStore(RUNTIME_ROOT)
+    manifest = evidence.finalize_run(state["run_id"], report_path=state.get("report_path"))
+    retention_days, max_runs = configured_retention_policy()
+    removed = evidence.prune_runs(retention_days=retention_days, max_runs=max_runs)
+    print(f"证据清单已保存：{manifest}")
+    if removed:
+        print(f"已按显式保留策略清理 {len(removed)} 个旧运行：{', '.join(removed)}")
+    return {}
+
+
 # ── 构建 LangGraph 工作流 ─────────────────────────────────────────
 
 def build_competitor_agent():
@@ -714,12 +767,14 @@ def build_competitor_agent():
     workflow.add_node("compare_all", compare_all_node)
     workflow.add_node("generate_report", generate_report_node)
     workflow.add_node("push_to_wecom", push_to_wecom_node)
+    workflow.add_node("finalize_evidence", finalize_evidence_node)
 
     workflow.set_entry_point("crawl_all")
     workflow.add_edge("crawl_all", "compare_all")
     workflow.add_edge("compare_all", "generate_report")
     workflow.add_edge("generate_report", "push_to_wecom")
-    workflow.add_edge("push_to_wecom", END)
+    workflow.add_edge("push_to_wecom", "finalize_evidence")
+    workflow.add_edge("finalize_evidence", END)
 
     return workflow.compile()
 
@@ -728,6 +783,7 @@ def build_competitor_agent():
 
 async def main():
     urls = load_competitor_urls()
+    run_id = new_run_id()
     print("=" * 60)
     print(f"竞品监控 Agent 启动 · {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"当前生效监控清单：共 {len(urls)} 个竞品网站")
@@ -740,6 +796,7 @@ async def main():
     agent = build_competitor_agent()
 
     initial_state: AgentState = {
+        "run_id": run_id,
         "urls": urls,
         "crawled_contents": {},
         "crawled_screenshots": {},
@@ -749,10 +806,12 @@ async def main():
         "changed_urls": [],
         "token_usage": {},
         "daily_report": "",
+        "report_path": "",
         "should_push": False
     }
 
     with AgentRunLock():
+        EvidenceStore(RUNTIME_ROOT).begin_run(run_id, urls)
         await agent.ainvoke(initial_state)
 
     print("\n" + "=" * 60)
