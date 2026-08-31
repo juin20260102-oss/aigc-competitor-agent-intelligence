@@ -194,6 +194,12 @@ python step3_agent.py
 
 每次完整运行还会生成独立的不可变证据目录，`manifest.json` 记录所有文件的大小与 SHA-256。旧 `data/snapshots` 可先运行 `python migrate_legacy_evidence.py` 预览，再加 `--apply` 执行只复制迁移。保留策略默认关闭；仅在显式设置 `EVIDENCE_RETENTION_DAYS` 或 `EVIDENCE_MAX_RUNS` 为正数时清理已完成的旧运行。
 
+## 运行预算与通知
+
+默认配置限制抓取并发 3、模型并发 4、逻辑模型调用 25 次、总 Token 200,000、整次运行 900 秒。可在 `.env` 用 `CRAWL_CONCURRENCY`、`LLM_CONCURRENCY`、`MAX_MODEL_CALLS`、`MAX_TOTAL_TOKENS`、`CRAWL_TIMEOUT_SECONDS`、`MODEL_TIMEOUT_SECONDS` 和 `RUN_TIMEOUT_SECONDS` 调整（程序会将异常值限制在安全范围）。每次运行会在证据目录写入 `events.jsonl` 和 `run_summary.json`。
+
+企业微信只推送变化站点、抓取异常和用量摘要；完整报告、逐条引文和截图保留在本地工作台，避免把报告开头截断后误导阅读。
+
 ### 失败与覆盖规则
 
 - 单个站点抓取失败不会中断其他站点，失败原因会写入当次日报；
