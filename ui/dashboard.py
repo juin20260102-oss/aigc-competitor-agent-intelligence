@@ -3,24 +3,31 @@ UI 模块：概览、运行进度与最近日志。
 """
 
 import os
-import glob
 import json
 import subprocess
 import time
+import html
+import sys
 import streamlit as st
 from datetime import datetime
 from dotenv import load_dotenv
 
-load_dotenv()
+from agent_utils import (
+    DEMO_DATA_DIR,
+    DEMO_REPORT_DIR,
+    LOG_DIR,
+    PROJECT_ROOT,
+    REPORT_DIR,
+    SCREENSHOT_DIR,
+    SNAPSHOT_DIR,
+    atomic_write_text,
+    ensure_runtime_layout,
+    merged_artifact_files,
+)
 
-DATA_DIR = "data"
-SNAPSHOT_DIR = os.path.join(DATA_DIR, "snapshots")
-SCREENSHOT_DIR = os.path.join(DATA_DIR, "screenshots")
-REPORT_DIR = "reports"
-LOG_DIR = os.path.join(DATA_DIR, "logs")
-LAST_RUN_LOG_PATH = os.path.join(LOG_DIR, "last_run.log")
-
-os.makedirs(LOG_DIR, exist_ok=True)
+load_dotenv(PROJECT_ROOT / ".env")
+ensure_runtime_layout()
+LAST_RUN_LOG_PATH = LOG_DIR / "last_run.log"
 
 
 def get_system_stats():
@@ -31,11 +38,11 @@ def get_system_stats():
     total_configured = len(config_items)
 
     screenshots = [
-        path for path in glob.glob(os.path.join(SCREENSHOT_DIR, "*.png"))
+        path for path in merged_artifact_files(SCREENSHOT_DIR, DEMO_DATA_DIR / "screenshots", "*.png")
         if not os.path.basename(path).startswith("test_")
     ]
-    reports = glob.glob(os.path.join(REPORT_DIR, "daily_report_*.md"))
-    snapshots = glob.glob(os.path.join(SNAPSHOT_DIR, "*_latest.json"))
+    reports = merged_artifact_files(REPORT_DIR, DEMO_REPORT_DIR, "daily_report_*.md")
+    snapshots = merged_artifact_files(SNAPSHOT_DIR, DEMO_DATA_DIR / "snapshots", "*_latest.json")
     
     ratings = {"S": 0, "A": 0, "B": 0, "C": 0, "其他": 0}
     for s_path in snapshots:
@@ -62,7 +69,7 @@ def get_system_stats():
         "screenshot_count": len(screenshots),
         "report_count": len(reports),
         "ratings": ratings,
-        "latest_report": sorted(reports)[-1] if reports else None
+        "latest_report": max(reports, key=os.path.getmtime) if reports else None
     }
 
 
@@ -156,13 +163,13 @@ def render_dashboard():
 
             try:
                 process = subprocess.Popen(
-                    ["python", "step3_agent.py"],
+                    [sys.executable, str(PROJECT_ROOT / "step3_agent.py")],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
                     encoding="utf-8",
                     errors="replace",
-                    cwd=os.getcwd()
+                    cwd=str(PROJECT_ROOT)
                 )
 
                 current_progress = 0.05
@@ -175,14 +182,15 @@ def render_dashboard():
                     lines = log_text.splitlines()
                     display_lines = lines[-16:] if len(lines) > 16 else lines
                     
-                    log_placeholder.markdown(f'<div class="terminal-box">📟 实时执行日志流：<br>' + "<br>".join([f"&gt; {l}" for l in display_lines]) + '</div>', unsafe_allow_html=True)
+                    safe_lines = [html.escape(line) for line in display_lines]
+                    log_placeholder.markdown('<div class="terminal-box">📟 实时执行日志流：<br>' + "<br>".join([f"&gt; {line}" for line in safe_lines]) + '</div>', unsafe_allow_html=True)
 
                     if "[节点1]" in line:
                         current_progress = 0.10
                         current_stage_text = "🔄 [阶段 1/3] 正在并发抓取竞品网页并生成高清渲染截图..."
                     elif "[成功]" in line:
                         current_progress = min(0.38, current_progress + 0.02)
-                        current_stage_text = f"🌐 [阶段 1/3] 抓取并截图成功，正在处理下一个站点..."
+                        current_stage_text = "🌐 [阶段 1/3] 抓取并截图成功，正在处理下一个站点..."
                     elif "抓取完成" in line:
                         current_progress = 0.40
                         current_stage_text = "✅ [阶段 1/3 完成] 网页抓取与截图全部就绪，正在准备大模型并发解析..."
@@ -205,8 +213,7 @@ def render_dashboard():
                 elapsed = int(time.time() - start_time)
 
                 # 持久化保存执行日志与状态
-                with open(LAST_RUN_LOG_PATH, "w", encoding="utf-8") as lf:
-                    lf.write(log_text)
+                atomic_write_text(LAST_RUN_LOG_PATH, log_text)
 
                 st.session_state["last_run_info"] = {
                     "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -239,7 +246,8 @@ def render_dashboard():
                 elapsed_label = f" ｜ 耗时：{run_info['elapsed']}s" if "elapsed" in run_info else ""
                 
                 with st.expander(f"📟 最近一次 Agent 执行日志（{time_label}{elapsed_label}）", expanded=False):
-                    st.markdown(f'<div class="terminal-box" style="max-height: 300px; overflow-y: auto;">' + "<br>".join([f"&gt; {l}" for l in saved_logs.splitlines()]) + '</div>', unsafe_allow_html=True)
+                    safe_lines = [html.escape(line) for line in saved_logs.splitlines()]
+                    st.markdown('<div class="terminal-box" style="max-height: 300px; overflow-y: auto;">' + "<br>".join([f"&gt; {line}" for line in safe_lines]) + '</div>', unsafe_allow_html=True)
 
     with col_sched:
         st.markdown("""
