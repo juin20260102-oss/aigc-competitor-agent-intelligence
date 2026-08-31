@@ -24,6 +24,7 @@ from agent_utils import (
     atomic_write_text,
     ensure_runtime_layout,
     site_key_for_url,
+    validate_model_base_url,
     validate_public_http_url,
 )
 
@@ -41,7 +42,9 @@ ensure_runtime_layout()
 def get_llm_client() -> tuple[OpenAI, str]:
     """获取 OpenAI 兼容客户端与模型配置"""
     api_key = os.getenv("OPENAI_API_KEY") or os.getenv("DASHSCOPE_API_KEY")
-    base_url = os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+    base_url = validate_model_base_url(
+        os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+    )
     model = os.getenv("MODEL_NAME", "qwen3.7-flash")
 
     if not api_key:

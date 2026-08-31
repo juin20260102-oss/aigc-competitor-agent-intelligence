@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher, unified_diff
 from pathlib import Path
 from urllib.parse import urlsplit
+from urllib.parse import parse_qs
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -225,6 +226,46 @@ def validate_public_http_url(url: str, *, resolve_dns: bool = False) -> str:
             raise ValueError(f"域名未解析到地址：{hostname}")
         if any(_is_forbidden_ip(address) for address in addresses):
             raise ValueError("域名解析到了私网、回环、链路本地或保留地址")
+    return candidate
+
+
+DEFAULT_MODEL_BASE_URLS = (
+    "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "https://api.openai.com/v1",
+)
+
+
+def allowed_model_base_urls() -> tuple[str, ...]:
+    configured = os.getenv("MODEL_BASE_URL_ALLOWLIST", "")
+    values = [item.strip().rstrip("/") for item in configured.split(",") if item.strip()]
+    return tuple(dict.fromkeys(values or DEFAULT_MODEL_BASE_URLS))
+
+
+def validate_model_base_url(url: str, *, allowed: tuple[str, ...] | None = None) -> str:
+    candidate = ensure_single_line(url, "Base URL").rstrip("/")
+    parsed = urlsplit(candidate)
+    is_loopback_http = parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "::1", "localhost"}
+    if parsed.scheme != "https" and not is_loopback_http:
+        raise ValueError("模型 Base URL 必须使用 HTTPS；仅显式允许本机 HTTP 服务")
+    if not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("模型 Base URL 格式无效，不允许凭据、查询参数或片段")
+    approved = tuple(item.rstrip("/") for item in (allowed or allowed_model_base_urls()))
+    if candidate not in approved:
+        raise ValueError("模型 Base URL 不在 MODEL_BASE_URL_ALLOWLIST 中")
+    if not is_loopback_http:
+        validate_public_http_url(candidate)
+    return candidate
+
+
+def validate_wecom_webhook(url: str) -> str:
+    candidate = ensure_single_line(url, "Webhook")
+    parsed = urlsplit(candidate)
+    if parsed.scheme != "https" or parsed.hostname != "qyapi.weixin.qq.com":
+        raise ValueError("企业微信 Webhook 必须使用 qyapi.weixin.qq.com 的 HTTPS 地址")
+    if parsed.path != "/cgi-bin/webhook/send" or not parse_qs(parsed.query).get("key"):
+        raise ValueError("企业微信 Webhook 路径或 key 参数无效")
+    if parsed.username or parsed.password or parsed.fragment:
+        raise ValueError("Webhook 不允许包含凭据或片段")
     return candidate
 
 

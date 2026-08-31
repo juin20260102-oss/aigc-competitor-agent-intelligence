@@ -1,6 +1,7 @@
 import json
 import socket
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -13,7 +14,9 @@ from agent_utils import (
     ensure_single_line,
     normalize_content,
     site_key_for_url,
+    validate_model_base_url,
     validate_public_http_url,
+    validate_wecom_webhook,
 )
 from step3_agent import call_llm_with_retry, verify_evidence_quotes
 
@@ -63,6 +66,31 @@ class UrlSafetyTests(unittest.TestCase):
         getaddrinfo.return_value = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 443))]
         with self.assertRaises(ValueError):
             validate_public_http_url("https://example.com", resolve_dns=True)
+
+    def test_model_base_url_must_be_explicitly_allowed(self):
+        allowed = ("https://api.example.com/v1",)
+        self.assertEqual(
+            validate_model_base_url("https://api.example.com/v1/", allowed=allowed),
+            "https://api.example.com/v1",
+        )
+        with self.assertRaises(ValueError):
+            validate_model_base_url("https://attacker.example/v1", allowed=allowed)
+
+    def test_wecom_webhook_is_restricted_to_official_endpoint(self):
+        valid = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test-key"
+        self.assertEqual(validate_wecom_webhook(valid), valid)
+        for invalid in (
+            "http://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=x",
+            "https://example.com/cgi-bin/webhook/send?key=x",
+            "https://qyapi.weixin.qq.com/cgi-bin/webhook/send",
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                validate_wecom_webhook(invalid)
+
+    def test_streamlit_is_bound_to_loopback(self):
+        config = tomllib.loads((Path(__file__).parents[1] / ".streamlit" / "config.toml").read_text())
+        self.assertEqual(config["server"]["address"], "127.0.0.1")
+        self.assertTrue(config["server"]["enableXsrfProtection"])
 
 
 class PersistenceAndLockTests(unittest.TestCase):

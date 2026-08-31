@@ -7,9 +7,15 @@ import json
 import httpx
 import streamlit as st
 from datetime import datetime
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
-from agent_utils import PROJECT_ROOT, atomic_write_text, ensure_single_line
+from agent_utils import (
+    PROJECT_ROOT,
+    atomic_write_text,
+    ensure_single_line,
+    validate_model_base_url,
+    validate_wecom_webhook,
+)
 
 ENV_FILE = PROJECT_ROOT / ".env"
 
@@ -37,17 +43,22 @@ def load_env_dict():
 
 def save_env_dict(data: dict):
     """将键值对保存到本地 .env 文件。"""
+    existing = {key: value or "" for key, value in dotenv_values(ENV_FILE).items()}
     values = {
         "OPENAI_API_KEY": ensure_single_line(data.get("OPENAI_API_KEY", ""), "API Key"),
-        "OPENAI_BASE_URL": ensure_single_line(
-            data.get("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
-            "Base URL",
+        "OPENAI_BASE_URL": validate_model_base_url(
+            data.get("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
         ),
         "MODEL_NAME": ensure_single_line(data.get("MODEL_NAME", "qwen3.7-flash"), "模型名称"),
-        "WECOM_WEBHOOK": ensure_single_line(data.get("WECOM_WEBHOOK", ""), "Webhook"),
+        "WECOM_WEBHOOK": (
+            validate_wecom_webhook(data.get("WECOM_WEBHOOK", ""))
+            if data.get("WECOM_WEBHOOK", "").strip()
+            else ""
+        ),
     }
+    existing.update(values)
     lines = ["# AIGC 竞品监控 Agent 配置文件"]
-    lines.extend(f"{key}={json.dumps(value, ensure_ascii=False)}" for key, value in values.items())
+    lines.extend(f"{key}={json.dumps(value, ensure_ascii=False)}" for key, value in existing.items())
     atomic_write_text(ENV_FILE, "\n".join(lines) + "\n")
     load_dotenv(ENV_FILE, override=True)
 
@@ -56,6 +67,10 @@ def test_wecom_webhook(webhook: str) -> tuple[bool, str]:
     """测试企业微信 Webhook 是否有效"""
     if not webhook:
         return False, "Webhook 链接为空"
+    try:
+        webhook = validate_wecom_webhook(webhook)
+    except ValueError as exc:
+        return False, str(exc)
     
     payload = {
         "msgtype": "markdown",
@@ -131,7 +146,7 @@ def render_settings():
 
         st.markdown("---")
         st.markdown("### 🔔 3. 企业微信群机器人推送")
-        wecom_webhook = st.text_input("Webhook 推送链接 (可选)：", value=env_data["WECOM_WEBHOOK"], placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...", help="配置后，每日监控发现实质性变化将自动推送 Markdown 日报至群聊")
+        wecom_webhook = st.text_input("Webhook 推送链接 (可选)：", value=env_data["WECOM_WEBHOOK"], type="password", placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...", help="仅允许企业微信官方 qyapi.weixin.qq.com Webhook")
 
         st.markdown("<br>", unsafe_allow_html=True)
         saved = st.form_submit_button("💾 保存全部配置", type="primary", use_container_width=True)
@@ -147,6 +162,8 @@ def render_settings():
                 "WECOM_WEBHOOK": wecom_webhook.strip()
             }
             try:
+                if base_url.strip().rstrip("/") != env_data["OPENAI_BASE_URL"].strip().rstrip("/") and not new_key_input.strip():
+                    raise ValueError("修改 Base URL 时必须重新输入 API Key")
                 save_env_dict(new_config)
             except ValueError as exc:
                 st.error(f"配置未保存：{exc}")

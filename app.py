@@ -3,10 +3,12 @@ AIGC 竞品情报工作台。
 """
 
 import os
+import hmac
 import streamlit as st
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
 
 # 页面基础配置
 st.set_page_config(
@@ -15,6 +17,26 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+
+def require_console_access() -> None:
+    """Require the optional shared password before loading any workspace data."""
+    expected = os.getenv("APP_ACCESS_PASSWORD", "")
+    if not expected or st.session_state.get("console_authenticated"):
+        return
+    st.title("🔐 AIGC 竞品情报工作台")
+    with st.form("console_login", clear_on_submit=True):
+        supplied = st.text_input("访问密码", type="password")
+        submitted = st.form_submit_button("登录", type="primary")
+    if submitted:
+        if hmac.compare_digest(supplied, expected):
+            st.session_state["console_authenticated"] = True
+            st.rerun()
+        st.error("访问密码错误")
+    st.stop()
+
+
+require_console_access()
 
 # 控制台样式
 st.markdown("""
@@ -190,11 +212,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 导入各页面模块
-from ui.dashboard import render_dashboard
-from ui.reports import render_reports
-from ui.competitors import render_competitors
-from ui.gallery import render_gallery
-from ui.settings import render_settings
+from ui.dashboard import render_dashboard  # noqa: E402
+from ui.reports import render_reports  # noqa: E402
+from ui.competitors import render_competitors  # noqa: E402
+from ui.gallery import render_gallery  # noqa: E402
+from ui.settings import render_settings  # noqa: E402
 
 # 侧边栏品牌与导航
 has_api_key = bool(os.getenv("OPENAI_API_KEY") or os.getenv("DASHSCOPE_API_KEY"))
