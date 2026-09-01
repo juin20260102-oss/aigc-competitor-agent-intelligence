@@ -151,6 +151,12 @@ python step3_agent.py
 
 开发时可使用宽松约束的 `requirements.txt`；部署、CI 和复现环境使用由 `tools/generate_requirements_lock.py` 生成的精确 `requirements.lock`。升级依赖后，在已验证环境运行该脚本并一并提交锁文件。
 
+### GitHub Actions 定时运行（无常驻服务器）
+
+仓库提供 [`.github/workflows/daily-monitor.yml`](.github/workflows/daily-monitor.yml)，可在 GitHub 的 Ubuntu Runner 上每天运行 Agent。Runner 是临时的，运行前从私有 Cloudflare R2 恢复 `runtime/`，运行后再上传；不把截图和快照提交回 Git。
+
+首次部署需要在 GitHub Actions 配置 Cloudflare 账户、具备 R2 读写权限的 API Token、R2 桶名和模型 Key。完整的 Secret 列表、权限要求、预算和首次验证步骤见 [GitHub Actions + R2 部署手册](docs/GITHUB_ACTIONS_R2.md)。
+
 ## 运行模式
 
 | 模式 | 是否需要 API Key | 说明 |
