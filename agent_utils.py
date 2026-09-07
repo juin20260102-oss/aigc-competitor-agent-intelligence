@@ -14,6 +14,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
+from datetime import datetime, timezone, timedelta
 from urllib.parse import parse_qs, parse_qsl, urlencode, urlsplit, urlunsplit
 
 
@@ -416,3 +417,43 @@ class AgentRunLock(AbstractContextManager["AgentRunLock"]):
             except FileNotFoundError:
                 pass
             self.acquired = False
+
+
+BEIJING_TZ = timezone(timedelta(hours=8))
+
+
+def to_beijing_time(dt: datetime | None = None) -> datetime:
+    """将 datetime 转换为东八区（北京时间）"""
+    if dt is None:
+        dt = datetime.now(timezone.utc)
+    elif dt.tzinfo is None:
+        # 如果是无时区时间（默认为服务器当前本地时间），将其绑定为系统本地时区再转为北京时间
+        dt = dt.astimezone()
+    return dt.astimezone(BEIJING_TZ)
+
+
+def format_beijing_time(dt_or_timestamp: datetime | float | int | str | None = None, fmt: str = "%Y-%m-%d %H:%M") -> str:
+    """统一输出北京时间（UTC+8）格式化字符串，适配云端 UTC 容器与本地时区"""
+    if dt_or_timestamp is None:
+        return to_beijing_time().strftime(fmt)
+    if isinstance(dt_or_timestamp, (int, float)):
+        # timestamp（秒）以北京时区解析
+        dt = datetime.fromtimestamp(dt_or_timestamp, tz=BEIJING_TZ)
+        return dt.strftime(fmt)
+    if isinstance(dt_or_timestamp, datetime):
+        return to_beijing_time(dt_or_timestamp).strftime(fmt)
+    if isinstance(dt_or_timestamp, str):
+        clean_str = dt_or_timestamp.strip()
+        if not clean_str:
+            return ""
+        try:
+            # 常见 ISO 格式如 2026-08-26T09:06:21.703341
+            dt = datetime.fromisoformat(clean_str)
+            if dt.tzinfo is None:
+                # 抓取时是在本地电脑记录的时间戳，直接格式化
+                return dt.strftime(fmt)
+            return dt.astimezone(BEIJING_TZ).strftime(fmt)
+        except Exception:
+            return clean_str
+    return ""
+

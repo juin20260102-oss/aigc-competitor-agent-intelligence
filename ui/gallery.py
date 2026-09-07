@@ -1,4 +1,4 @@
-﻿"""
+"""
 UI 模块：网页截图存证画廊。
 """
 
@@ -7,18 +7,45 @@ import html
 import streamlit as st
 from datetime import datetime
 
+import json
 from agent_utils import (
     DEMO_DATA_DIR,
     SCREENSHOT_DIR,
+    SNAPSHOT_DIR,
+    format_beijing_time,
     merged_artifact_files,
     site_key_candidates,
 )
 from ui.competitors import load_competitors_config
 
 
+def get_snapshot_capture_times() -> dict[str, str]:
+    """读取快照记录的真实抓取时间（优先使用真实的 captured_at 而非文件 mtime）"""
+    times = {}
+    snapshot_files = merged_artifact_files(SNAPSHOT_DIR, DEMO_DATA_DIR / "snapshots", "*_latest.json")
+    for s_file in snapshot_files:
+        try:
+            with open(s_file, "r", encoding="utf-8-sig") as f:
+                data = json.load(f)
+                captured = data.get("captured_at")
+                if captured:
+                    fname = Path(s_file).name.replace("_latest.json", "")
+                    times[fname] = format_beijing_time(captured)
+                    url = data.get("url", "")
+                    if url:
+                        domain = url.replace("https://", "").replace("http://", "").split("/")[0]
+                        times[domain] = format_beijing_time(captured)
+        except Exception:
+            pass
+    return times
+
+
 def render_gallery():
     st.markdown('<div class="hero-title">🖼️ 视觉存证与快照画廊</div>', unsafe_allow_html=True)
     st.markdown('<div class="hero-subtitle">浏览最近一次网页渲染截图，对模型提取结果进行人工抽检</div>', unsafe_allow_html=True)
+
+    from pathlib import Path
+    capture_times = get_snapshot_capture_times()
 
     screenshots = sorted(
         path for path in merged_artifact_files(SCREENSHOT_DIR, DEMO_DATA_DIR / "screenshots", "*.png")
@@ -44,7 +71,9 @@ def render_gallery():
         domain = filename.replace("_latest.png", "").replace(".png", "")
         safe_domain = html.escape(domain)
         file_size_kb = os.path.getsize(s_path) / 1024
-        mod_time = datetime.fromtimestamp(os.path.getmtime(s_path)).strftime("%Y-%m-%d %H:%M")
+        
+        # 优先从快照元数据获取真实抓取时间，回退时使用文件时间并强制格式化为北京时间
+        mod_time = capture_times.get(domain) or format_beijing_time(os.path.getmtime(s_path))
 
         with cols[idx % 3]:
             st.markdown(f"""
