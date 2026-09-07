@@ -1,4 +1,4 @@
-﻿"""
+"""
 AIGC 竞品情报工作台。
 """
 
@@ -9,6 +9,15 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
+
+# 自动桥接 Streamlit Cloud Secrets 到环境变量，云端部署无需手动在页面输入 Key
+try:
+    if hasattr(st, "secrets"):
+        for sec_key, sec_val in st.secrets.items():
+            if isinstance(sec_val, (str, int, float, bool)):
+                os.environ.setdefault(sec_key, str(sec_val))
+except Exception:
+    pass
 
 # 页面基础配置
 st.set_page_config(

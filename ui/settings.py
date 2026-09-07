@@ -1,4 +1,4 @@
-﻿"""
+"""
 UI 模块：模型与通知配置。
 """
 
@@ -31,13 +31,22 @@ def mask_key(key: str) -> str:
 
 
 def load_env_dict():
-    """读取 .env 文件键值对"""
+    """读取 .env 文件键值对，优先兼容 Streamlit Cloud Secrets"""
     load_dotenv(ENV_FILE, override=True)
+    openai_key = os.getenv("OPENAI_API_KEY") or os.getenv("DASHSCOPE_API_KEY", "")
+    base_url = os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+    model = os.getenv("MODEL_NAME", "qwen3.7-flash")
+    webhook = os.getenv("WECOM_WEBHOOK", "")
+    if hasattr(st, "secrets"):
+        openai_key = openai_key or st.secrets.get("OPENAI_API_KEY") or st.secrets.get("DASHSCOPE_API_KEY", "")
+        base_url = st.secrets.get("OPENAI_BASE_URL", base_url)
+        model = st.secrets.get("MODEL_NAME", model)
+        webhook = st.secrets.get("WECOM_WEBHOOK", webhook)
     return {
-        "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY") or os.getenv("DASHSCOPE_API_KEY", ""),
-        "OPENAI_BASE_URL": os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
-        "MODEL_NAME": os.getenv("MODEL_NAME", "qwen3.7-flash"),
-        "WECOM_WEBHOOK": os.getenv("WECOM_WEBHOOK", "")
+        "OPENAI_API_KEY": openai_key or "",
+        "OPENAI_BASE_URL": base_url,
+        "MODEL_NAME": model,
+        "WECOM_WEBHOOK": webhook or ""
     }
 
 
