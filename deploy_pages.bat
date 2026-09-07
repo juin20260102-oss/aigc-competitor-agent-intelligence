@@ -23,7 +23,7 @@ if "%CHOICE%"=="2" goto :GUIDE
 
 echo.
 echo [*] 正在调用 Wrangler 部署 dist 目录到 Cloudflare Pages...
-call npx -y wrangler pages deploy dist --project-name aigc-intel-hub
+call npx -y wrangler pages deploy dist --project-name aigc-intel-hub --branch=main
 if %ERRORLEVEL% equ 0 (
     echo.
     echo [SUCCESS] 部署成功！您已获得专属的 pages.dev 公网链接！
