@@ -262,8 +262,20 @@ def assess_change(
     return ChangeAssessment(changed, similarity, changed_characters, diff_context)
 
 
-def _is_forbidden_ip(value: str) -> bool:
+_FAKE_IP_V4 = ipaddress.ip_network("198.18.0.0/15")
+_FAKE_IP_V6 = ipaddress.ip_network("fdfe:dcba:9876::/48")
+
+
+def _is_fake_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    if ip.version == 4:
+        return ip in _FAKE_IP_V4
+    return ip in _FAKE_IP_V6
+
+
+def _is_forbidden_ip(value: str, *, allow_proxy_fake_ip: bool = False) -> bool:
     ip = ipaddress.ip_address(value.split("%", 1)[0])
+    if allow_proxy_fake_ip and _is_fake_ip(ip):
+        return False
     return any(
         (
             ip.is_private,
@@ -303,7 +315,7 @@ def validate_public_http_url(url: str, *, resolve_dns: bool = False) -> str:
             raise ValueError(f"域名解析失败：{hostname}") from exc
         if not addresses:
             raise ValueError(f"域名未解析到地址：{hostname}")
-        if any(_is_forbidden_ip(address) for address in addresses):
+        if any(_is_forbidden_ip(address, allow_proxy_fake_ip=True) for address in addresses):
             raise ValueError("域名解析到了私网、回环、链路本地或保留地址")
     return candidate
 
