@@ -94,5 +94,35 @@
     "name": "几何AIGC",
     "category": "3D/生成设计",
     "enabled": true
+  },
+  {
+    "name": "美图设计室",
+    "url": "https://www.designkit.cn",
+    "category": "电商商拍/AI设计",
+    "enabled": true
+  },
+  {
+    "name": "无界AI",
+    "url": "https://www.wujieai.com",
+    "category": "商业创作/多模态AI",
+    "enabled": true
+  },
+  {
+    "name": "即梦AI",
+    "url": "https://jimeng.jianying.com",
+    "category": "前沿生图/视频大模型",
+    "enabled": true
+  },
+  {
+    "name": "阿里堆友",
+    "url": "https://d.design",
+    "category": "3D设计/电商生图",
+    "enabled": true
+  },
+  {
+    "name": "Vidu",
+    "url": "https://www.vidu.studio",
+    "category": "视频大模型/生成",
+    "enabled": true
   }
 ]
