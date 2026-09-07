@@ -1,4 +1,4 @@
-﻿# Environment variables
+# Environment variables
 .env
 
 # Python caches
@@ -21,3 +21,6 @@ archives/
 
 # Runtime outputs (tracked demo artifacts remain under data/ and reports/)
 runtime/
+
+# Cloudflare Wrangler cache
+.wrangler/
