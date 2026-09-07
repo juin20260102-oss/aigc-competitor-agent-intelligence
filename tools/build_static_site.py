@@ -5,7 +5,6 @@ AIGC 竞品态势感知看板 - 纯静态站点生成器 (Static Site Generator)
 用于直接部署到 Cloudflare Pages、GitHub Pages 或任何静态托管平台。
 """
 
-import os
 import re
 import json
 import shutil
@@ -1684,7 +1683,7 @@ def build():
 
     print(f"[SUCCESS] 静态单页已成功生成: {index_path}")
     print(f"[INFO] 静态站点输出目录: {DIST_DIR}")
-    print(f"[INFO] 可直接部署至 Cloudflare Pages，无需任何服务端和 API Key！")
+    print("[INFO] 可直接部署至 Cloudflare Pages，无需任何服务端和 API Key！")
 
 
 if __name__ == "__main__":

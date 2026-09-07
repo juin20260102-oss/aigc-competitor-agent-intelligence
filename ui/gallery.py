@@ -4,10 +4,10 @@ UI 模块：网页截图存证画廊。
 
 import os
 import html
-import streamlit as st
-from datetime import datetime
-
 import json
+from pathlib import Path
+import streamlit as st
+
 from agent_utils import (
     DEMO_DATA_DIR,
     SCREENSHOT_DIR,
@@ -44,7 +44,6 @@ def render_gallery():
     st.markdown('<div class="hero-title">🖼️ 视觉存证与快照画廊</div>', unsafe_allow_html=True)
     st.markdown('<div class="hero-subtitle">浏览最近一次网页渲染截图，对模型提取结果进行人工抽检</div>', unsafe_allow_html=True)
 
-    from pathlib import Path
     capture_times = get_snapshot_capture_times()
 
     screenshots = sorted(
