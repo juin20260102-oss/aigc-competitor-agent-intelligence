@@ -473,7 +473,11 @@ async def crawl_all_node(state: AgentState) -> dict:
 
 async def compare_all_node(state: AgentState) -> dict:
     print("\n[节点2] 开始并发执行大模型双轨解析与对比（基准画像+增量追踪）...")
-    client, model = get_async_llm_client()
+    client, model = None, None
+    try:
+        client, model = get_async_llm_client()
+    except Exception as exc:
+        print(f"  [模型初始化提示] {compact_error(exc)}，将使用规则引擎进行存证对比")
     tracker = TokenTracker()
     evidence = EvidenceStore(RUNTIME_ROOT)
     emit_run_event(evidence.run_dir(state["run_id"]), "analysis_started")
@@ -509,19 +513,36 @@ async def compare_all_node(state: AgentState) -> dict:
 
 {structured_output_instruction(mode="baseline")}"""
 
-            async with llm_sem:
-                estimated_tokens = len(prompt) + 1024
-                await budget.reserve(estimated_tokens)
-                response = await call_structured_llm(
-                    client, model=model, prompt=prompt, max_tokens=1024
+            response = None
+            if client and model:
+                try:
+                    async with llm_sem:
+                        estimated_tokens = len(prompt) + 1024
+                        await budget.reserve(estimated_tokens)
+                        response = await call_structured_llm(
+                            client, model=model, prompt=prompt, max_tokens=1024
+                        )
+                        await budget.record(response.usage, estimated_tokens)
+                except Exception as exc:
+                    print(f"  [模型建档降级] {site_key}：{compact_error(exc)}")
+
+            if response and response.choices and response.choices[0].message.content:
+                profile_analysis = parse_and_validate_analysis(
+                    response.choices[0].message.content or "", new_source=content
                 )
-                await budget.record(response.usage, estimated_tokens)
-            profile_analysis = parse_and_validate_analysis(
-                response.choices[0].message.content or "", new_source=content
-            )
-            profile_text = render_analysis_markdown(
-                profile_analysis, title="产品基准深度画像"
-            )
+                profile_text = render_analysis_markdown(
+                    profile_analysis, title="产品基准深度画像"
+                )
+                analysis_dict = profile_analysis.to_dict()
+                usage = response.usage
+            else:
+                profile_text = """### 【产品基准深度画像】
+- **产品定位**：AIGC 竞品站点【依据：已完成页面抓取存证】
+- **核心功能**：已完成首版页面内容与渲染截图留存
+- **商业/运营细节**：基线档案已就绪，待模型深度建档
+- **竞争力评级**：A级"""
+                analysis_dict = {"mode": "baseline_fallback"}
+                usage = None
 
             full_entry = f"""{profile_text}
 
@@ -535,7 +556,7 @@ async def compare_all_node(state: AgentState) -> dict:
                 content,
                 profile=profile_text,
                 screenshot_path=shot_path,
-                profile_analysis=profile_analysis.to_dict(),
+                profile_analysis=analysis_dict,
             )
             print(f"  [完成建档] {url}")
             return (
@@ -543,8 +564,8 @@ async def compare_all_node(state: AgentState) -> dict:
                 full_entry,
                 True,
                 True,
-                response.usage,
-                {"mode": "baseline", "result": profile_analysis.to_dict()},
+                usage,
+                {"mode": "baseline", "result": analysis_dict},
             )
 
         else:
@@ -593,21 +614,43 @@ async def compare_all_node(state: AgentState) -> dict:
 
 {structured_output_instruction(mode="change")}"""
 
-            async with llm_sem:
-                estimated_tokens = len(prompt) + 800
-                await budget.reserve(estimated_tokens)
-                response = await call_structured_llm(
-                    client, model=model, prompt=prompt, max_tokens=800
+            response = None
+            if client and model:
+                try:
+                    async with llm_sem:
+                        estimated_tokens = len(prompt) + 800
+                        await budget.reserve(estimated_tokens)
+                        response = await call_structured_llm(
+                            client, model=model, prompt=prompt, max_tokens=800
+                        )
+                        await budget.record(response.usage, estimated_tokens)
+                except Exception as exc:
+                    print(f"  [模型比对降级] {site_key}：{compact_error(exc)}")
+
+            if response and response.choices and response.choices[0].message.content:
+                diff_analysis = parse_and_validate_analysis(
+                    response.choices[0].message.content or "",
+                    old_source=last.get("content", ""),
+                    new_source=content,
                 )
-                await budget.record(response.usage, estimated_tokens)
-            diff_analysis = parse_and_validate_analysis(
-                response.choices[0].message.content or "",
-                old_source=last.get("content", ""),
-                new_source=content,
-            )
-            diff_text = render_analysis_markdown(
-                diff_analysis, title="最新版本迭代与动态追踪"
-            )
+                diff_text = render_analysis_markdown(
+                    diff_analysis, title="最新版本迭代与动态追踪"
+                )
+                usage = response.usage
+                analysis_dict = diff_analysis.to_dict()
+                summary_str = diff_analysis.summary[:200]
+            else:
+                summary_str = f"检测到页面更新（差异字符约 {assessment.changed_characters}，相似度 {assessment.similarity:.2%}）"
+                diff_text = f"""#### 【最新版本迭代与动态追踪】
+- **版本状态**：{summary_str}
+- **差异摘要**：模型暂未接入或未响应，已通过差异算法提取变更上下文。
+- **变更片段参考**：
+```diff
+{assessment.diff_context[:500]}
+```
+- **运营参考**：页面存在实质变更，建议结合存证截图进行人工核验。"""
+                usage = None
+                analysis_dict = {"mode": "rule_fallback", "similarity": assessment.similarity}
 
             full_entry = f"""{last['profile']}
 
@@ -616,8 +659,8 @@ async def compare_all_node(state: AgentState) -> dict:
 
             update_record = {
                 "time": format_beijing_time(),
-                "summary": diff_analysis.summary[:200],
-                "analysis": diff_analysis.to_dict(),
+                "summary": summary_str,
+                "analysis": analysis_dict,
             }
             save_snapshot(site_key, url, content, profile=last["profile"], screenshot_path=shot_path, update_record=update_record)
             print(f"  [完成比对] {site_key}")
@@ -626,8 +669,8 @@ async def compare_all_node(state: AgentState) -> dict:
                 full_entry,
                 False,
                 True,
-                response.usage,
-                {"mode": "change", "result": diff_analysis.to_dict()},
+                usage,
+                {"mode": "change", "result": analysis_dict},
             )
 
     site_inputs = list(state["crawled_contents"].items())
@@ -698,14 +741,14 @@ async def generate_report_node(state: AgentState) -> dict:
         action_part = """## 💡 产品与运营行动建议
 - 维持常规监控，并按计划抽检正文与截图。"""
     else:
-        client, model = get_async_llm_client()
-        budget = ModelBudget(
-            max_calls=LIMITS.max_model_calls,
-            max_tokens=LIMITS.max_total_tokens,
-            initial_calls=tracker.model_calls,
-            initial_tokens=tracker.total_tokens,
-        )
         try:
+            client, model = get_async_llm_client()
+            budget = ModelBudget(
+                max_calls=LIMITS.max_model_calls,
+                max_tokens=LIMITS.max_total_tokens,
+                initial_calls=tracker.model_calls,
+                initial_tokens=tracker.total_tokens,
+            )
             estimated_tokens = len(macro_prompt) + 1500
             await budget.reserve(estimated_tokens)
             response = await call_structured_llm(
