@@ -1,4 +1,4 @@
-﻿"""
+"""
 UI 模块：历史日报查看与分发。
 """
 
@@ -12,6 +12,7 @@ from agent_utils import (
     DEMO_REPORT_DIR,
     PROJECT_ROOT,
     REPORT_DIR,
+    format_beijing_time,
     merged_artifact_files,
     validate_wecom_webhook,
 )
@@ -64,10 +65,19 @@ def render_reports():
     col_sel, col_act1, col_act2 = st.columns([3, 1, 1])
     
     with col_sel:
+        import re
+        def report_label(p):
+            fname = os.path.basename(p)
+            m = re.search(r"(\d{8})", fname)
+            if m:
+                ds = m.group(1)
+                return f"📑 {fname} （归档日期：{ds[:4]}-{ds[4:6]}-{ds[6:]}）"
+            return f"📑 {fname} （生成于 {format_beijing_time(os.path.getmtime(p))}）"
+
         selected_file = st.selectbox(
             "📅 选择历史归档日报：",
             options=report_files,
-            format_func=lambda x: f"📑 {os.path.basename(x)} （生成于 {datetime.fromtimestamp(os.path.getmtime(x)).strftime('%Y-%m-%d %H:%M')}）"
+            format_func=report_label
         )
 
     if selected_file and os.path.exists(selected_file):

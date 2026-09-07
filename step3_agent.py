@@ -44,6 +44,7 @@ from agent_utils import (
     compact_error,
     content_hash,
     ensure_runtime_layout,
+    format_beijing_time,
     resolve_site_artifact,
     site_key_for_url,
     validate_model_base_url,
@@ -335,9 +336,33 @@ class AgentState(TypedDict):
 # LangGraph 节点
 # ══════════════════════════════════════════════════════════════════
 
+def ensure_playwright_browsers() -> None:
+    """自动检测并安装 Playwright Chromium，解决云端容器无头浏览器缺失问题"""
+    try:
+        from pathlib import Path
+        cache_dir = Path.home() / ".cache" / "ms-playwright"
+        # 检查是否有 chromium 相关目录
+        if cache_dir.exists() and any(cache_dir.glob("chromium*")):
+            return
+    except Exception:
+        pass
+
+    print("\n[环境自检] 检测到当前运行环境未安装 Playwright Chromium 内核，正在自动安装...")
+    try:
+        import subprocess
+        res = subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], capture_output=True, text=True)
+        if res.returncode == 0:
+            print("  [环境自检] ✅ Playwright Chromium 内核自动安装成功！")
+        else:
+            print(f"  [环境自检] ⚠️ 安装 Chromium 提示: {res.stderr.strip()[:200]}")
+    except Exception as exc:
+        print(f"  [环境自检] ⚠️ 自动安装 Playwright 异常: {exc}")
+
+
 # ── 节点 1：智能并发抓取、自动关弹窗与高清截图 ────────────────────
 
 async def crawl_all_node(state: AgentState) -> dict:
+    ensure_playwright_browsers()
     urls_to_crawl = state["urls"]
     evidence = EvidenceStore(RUNTIME_ROOT)
     emit_run_event(evidence.run_dir(state["run_id"]), "crawl_started", site_count=len(urls_to_crawl))
@@ -555,7 +580,7 @@ async def compare_all_node(state: AgentState) -> dict:
 
 网址：{url}
 上次抓取时间：{last['captured_at'][:16]}
-本次抓取时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}
+本次抓取时间：{format_beijing_time()}
 
 <untrusted_diff>
 {assessment.diff_context}
@@ -590,7 +615,7 @@ async def compare_all_node(state: AgentState) -> dict:
 - **存证截图**：`{shot_path}`"""
 
             update_record = {
-                "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "time": format_beijing_time(),
                 "summary": diff_analysis.summary[:200],
                 "analysis": diff_analysis.to_dict(),
             }
@@ -728,7 +753,7 @@ async def generate_report_node(state: AgentState) -> dict:
             error_section += f"| `{url}` | {compact_error(err)} |\n"
         error_section += "\n---\n\n"
 
-    today_str = datetime.now().strftime('%Y年%m月%d日')
+    today_str = format_beijing_time(fmt='%Y年%m月%d日')
     final_report = f"""# AIGC 竞品监控日报 · {today_str}
 
 > 本报告由模型基于网页抓取结果生成，用于提高信息整理效率；引用、变化判断与行动建议均需人工复核。
@@ -748,7 +773,7 @@ async def generate_report_node(state: AgentState) -> dict:
     print("日报生成完成！共包含 " + str(len(state['comparisons'])) + " 个完整竞品板块")
     print(tracker.summary_markdown())
 
-    report_path = os.path.join(REPORT_DIR, f"daily_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md")
+    report_path = os.path.join(REPORT_DIR, f"daily_report_{format_beijing_time(fmt='%Y%m%d_%H%M%S')}.md")
     atomic_write_text(report_path, final_report)
     print(f"日报已保存至：{report_path}")
     emit_run_event(

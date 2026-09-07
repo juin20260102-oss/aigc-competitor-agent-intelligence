@@ -1,4 +1,4 @@
-﻿"""
+"""
 UI 模块：概览、运行进度与最近日志。
 """
 
@@ -22,6 +22,7 @@ from agent_utils import (
     SNAPSHOT_DIR,
     atomic_write_text,
     ensure_runtime_layout,
+    format_beijing_time,
     merged_artifact_files,
 )
 
@@ -185,7 +186,10 @@ def render_dashboard():
                     safe_lines = [html.escape(line) for line in display_lines]
                     log_placeholder.markdown('<div class="terminal-box">📟 实时执行日志流：<br>' + "<br>".join([f"&gt; {line}" for line in safe_lines]) + '</div>', unsafe_allow_html=True)
 
-                    if "[节点1]" in line:
+                    if "[环境自检]" in line or "playwright" in line:
+                        current_progress = 0.06
+                        current_stage_text = "🔄 [环境初始化] 正在准备无头浏览器运行环境..."
+                    elif "[节点1]" in line:
                         current_progress = 0.10
                         current_stage_text = "🔄 [阶段 1/3] 正在并发抓取竞品网页并生成高清渲染截图..."
                     elif "[成功]" in line:
@@ -216,7 +220,7 @@ def render_dashboard():
                 atomic_write_text(LAST_RUN_LOG_PATH, log_text)
 
                 st.session_state["last_run_info"] = {
-                    "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "time": format_beijing_time(fmt="%Y-%m-%d %H:%M:%S"),
                     "elapsed": elapsed,
                     "success": (return_code == 0)
                 }
@@ -245,7 +249,8 @@ def render_dashboard():
                 time_label = run_info.get("time", "近期")
                 elapsed_label = f" ｜ 耗时：{run_info['elapsed']}s" if "elapsed" in run_info else ""
                 
-                with st.expander(f"📟 最近一次 Agent 执行日志（{time_label}{elapsed_label}）", expanded=False):
+                is_failed = (run_info.get("success") is False)
+                with st.expander(f"📟 最近一次 Agent 执行日志（{time_label}{elapsed_label}）", expanded=is_failed):
                     safe_lines = [html.escape(line) for line in saved_logs.splitlines()]
                     st.markdown('<div class="terminal-box" style="max-height: 300px; overflow-y: auto;">' + "<br>".join([f"&gt; {line}" for line in safe_lines]) + '</div>', unsafe_allow_html=True)
 
@@ -273,7 +278,7 @@ def render_dashboard():
         with open(stats["latest_report"], "r", encoding="utf-8") as f:
             latest_content = f.read()
         
-        st.caption(f"📁 当前呈现版本：`{os.path.basename(stats['latest_report'])}` ｜ 生成时间：{datetime.fromtimestamp(os.path.getmtime(stats['latest_report'])).strftime('%Y-%m-%d %H:%M')}")
+        st.caption(f"📁 当前呈现版本：`{os.path.basename(stats['latest_report'])}` ｜ 生成时间：{format_beijing_time(os.path.getmtime(stats['latest_report']))}")
         with st.expander("🔍 展开阅读完整日报", expanded=False):
             st.markdown(latest_content)
     else:
