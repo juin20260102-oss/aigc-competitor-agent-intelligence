@@ -126,6 +126,17 @@ def markdown_to_html(md_text: str) -> str:
                 table_lines = []
 
         if not stripped:
+            k = i + 1
+            while k < len(lines) and not lines[k].strip():
+                k += 1
+            if k < len(lines):
+                peek = lines[k].strip()
+                if in_list and (re.match(r"^\d+\.\s+", peek) if list_type == "ol" else re.match(r"^[-*+]\s+", peek)):
+                    i = k
+                    continue
+                if in_list and (lines[k].startswith("   ") or lines[k].startswith("\t")):
+                    i = k
+                    continue
             flush_list()
             i += 1
             continue
@@ -166,13 +177,41 @@ def markdown_to_html(md_text: str) -> str:
 
         ol_match = re.match(r"^(\d+)\.\s+(.*)$", stripped)
         if ol_match:
+            num = ol_match.group(1)
+            title = ol_match.group(2)
+            desc_lines = []
+            j = i + 1
+            while j < len(lines):
+                if not lines[j].strip():
+                    k = j + 1
+                    while k < len(lines) and not lines[k].strip():
+                        k += 1
+                    if k < len(lines) and (lines[k].startswith("   ") or lines[k].startswith("\t")):
+                        desc_lines.append(lines[k].strip())
+                        j = k + 1
+                        continue
+                    break
+                elif lines[j].startswith("   ") or lines[j].startswith("\t"):
+                    desc_lines.append(lines[j].strip())
+                    j += 1
+                elif not re.match(r"^\d+\.\s+", lines[j].strip()) and not re.match(r"^[-*+]\s+", lines[j].strip()) and not lines[j].strip().startswith("#") and not lines[j].strip().startswith("---"):
+                    desc_lines.append(lines[j].strip())
+                    j += 1
+                else:
+                    break
+
             if not in_list or list_type != "ol":
                 flush_list()
                 out.append('<ol class="prose-ol">')
                 in_list = True
                 list_type = "ol"
-            out.append(f"<li>{inline_format(ol_match.group(2))}</li>")
-            i += 1
+
+            if desc_lines:
+                desc_html = "<br>".join(inline_format(line_item) for line_item in desc_lines)
+                out.append(f'<li value="{num}"><div class="ol-title">{inline_format(title)}</div><div class="ol-desc">{desc_html}</div></li>')
+            else:
+                out.append(f'<li value="{num}">{inline_format(title)}</li>')
+            i = j
             continue
 
         flush_list()
@@ -750,8 +789,37 @@ def generate_html(data: dict) -> str:
             line-height: 1.7;
         }}
 
-        .prose-ul li, .prose-ol li {{
+        .prose-ul li {{
             margin-bottom: 0.4rem;
+        }}
+
+        .prose-ol {{
+            padding-left: 1.2rem;
+            margin: 1.2rem 0;
+        }}
+
+        .prose-ol > li {{
+            margin-bottom: 1.4rem;
+            line-height: 1.75;
+        }}
+
+        .prose-ol > li::marker {{
+            color: #60A5FA;
+            font-weight: 800;
+            font-size: 1.05rem;
+        }}
+
+        .ol-title {{
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 0.45rem;
+            font-size: 1rem;
+        }}
+
+        .ol-desc {{
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            line-height: 1.75;
         }}
 
         .prose-quote {{

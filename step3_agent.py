@@ -20,7 +20,6 @@ from langgraph.graph import StateGraph, END
 from dotenv import load_dotenv
 
 from analysis_schema import (
-    AnalysisResult,
     parse_and_validate_analysis,
     render_analysis_markdown,
     structured_output_instruction,
@@ -723,64 +722,62 @@ async def generate_report_node(state: AgentState) -> dict:
 
     sites_brief = ""
     for url, result in state["comparisons"].items():
-        sites_brief += f"\n- **站点**：{url}\n{extract_latest_change(result)}\n"
+        sites_brief += f"\n- **站点**：{url}\n{result[:700]}...\n"
 
-    macro_prompt = f"""你是 AIGC 竞品监控团队的核心资深分析师。以下是今日所有成功监控站点的核心摘要：
+    macro_prompt = f"""你是 AIGC 竞品监控团队的核心资深战略分析师。以下是今日成功监控的全部 {len(state['comparisons'])} 个竞品站点的基准画像与最新动态摘要：
 
 {sites_brief}
 
-请只根据上方“本次变化段”提炼 1-3 条有逐字证据支持的重点，不得把历史产品画像当成今日动态，也不得预测页面证据之外的行业趋势。首次纳入监控只表示建立基线，不代表竞品今日发布了新功能。
+请站在行业全局视角与战略高度，基于上述所有竞品的产品矩阵、技术演进、交互范式与商业化动作，撰写今日的深度宏观情报总结。
 
-{structured_output_instruction(mode="macro")}"""
+格式严格遵循 Markdown，必须输出以下两部分：
 
-    changed_count = len(state.get("changed_urls", []))
-    if changed_count == 0:
-        summary_part = """## 🌟 今日重点提炼
-本次未检测到达到复核阈值的实质变化，已跳过宏观模型总结。
-"""
-        action_part = """## 💡 产品与运营行动建议
-- 维持常规监控，并按计划抽检正文与截图。"""
-    else:
-        try:
-            client, model = get_async_llm_client()
-            budget = ModelBudget(
-                max_calls=LIMITS.max_model_calls,
-                max_tokens=LIMITS.max_total_tokens,
-                initial_calls=tracker.model_calls,
-                initial_tokens=tracker.total_tokens,
-            )
-            estimated_tokens = len(macro_prompt) + 1500
-            await budget.reserve(estimated_tokens)
-            response = await call_structured_llm(
-                client, model=model, prompt=macro_prompt, max_tokens=1500
-            )
-            await budget.record(response.usage, estimated_tokens)
-            tracker.add(response.usage)
-            macro_analysis = parse_and_validate_analysis(
-                response.choices[0].message.content or "", new_source=sites_brief
-            )
-            fact_analysis = AnalysisResult(
-                summary=macro_analysis.summary,
-                claims=macro_analysis.claims,
-                rating="NA",
-                parse_fallback=macro_analysis.parse_fallback,
-            )
-            summary_part = render_analysis_markdown(
-                fact_analysis, title="🌟 今日重点提炼"
-            ).replace("#### 【🌟 今日重点提炼】", "## 🌟 今日重点提炼", 1)
-            action_lines = ["## 💡 产品与运营行动建议"]
-            if macro_analysis.recommendations:
-                action_lines.extend(f"- {item}" for item in macro_analysis.recommendations)
-            else:
-                action_lines.append("- 暂无经结构化输出的行动建议，请人工复核逐站证据。")
-            action_part = "\n".join(action_lines)
-        except Exception as exc:
-            print(f"[汇总降级] 宏观总结生成失败：{compact_error(exc)}")
-            summary_part = f"""## 🌟 今日重点提炼
-本次完成 {len(state['comparisons'])} 个站点分析，其中 {changed_count} 个站点进入实质变化分析。宏观模型总结生成失败，请直接查看下方逐站证据。
-"""
+## 🌟 今日重点提炼
+（深度提炼 3 条最核心的行业大趋势、赛道格局演进、黑马竞品动作或商业化模式创新。序号严格按照 1. 2. 3. 规范递增编号，严禁全部写成 1.）
+
+每条重点要求：
+1. 序号与鲜明观点大标题：格式为 `1. **[鲜明有洞察力的大标题]**`（概括出深层行业规律或范式变迁，避免平庸流水账）；
+2. 深度横向对比论述：另起一段，横向关联并点名至少 3-5 个具体竞品（如 `konggeai`、`k-fashionshop`、`runninghub`、`liblib`、`gaoding`、`meitu`、`jimeng` 等），剖析其从单点功能向全链路闭环、工作流编排、模板生态或激进补贴迁移的行业深层规律，分析其对行业的颠覆性与壁垒演进。
+
+## 💡 产品与运营行动建议
+（基于上述宏观趋势，为我们自身 AIGC 团队提供 3 条具体、有杀伤力且可落地的产品与运营迭代策略，序号严格按照 1. 2. 3. 编号）：
+每条建议明确标注【产品迭代】、【工作流重构】或【商业化GTM】，并提供切实可行的产品设计与技术攻坚落地方案。"""
+
+    try:
+        client, model = get_async_llm_client()
+        budget = ModelBudget(
+            max_calls=LIMITS.max_model_calls,
+            max_tokens=LIMITS.max_total_tokens,
+            initial_calls=tracker.model_calls,
+            initial_tokens=tracker.total_tokens,
+        )
+        estimated_tokens = len(macro_prompt) + 2000
+        await budget.reserve(estimated_tokens)
+        response = await call_llm_with_retry(
+            client, model=model, prompt=macro_prompt, max_tokens=2000
+        )
+        await budget.record(response.usage, estimated_tokens)
+        tracker.add(response.usage)
+        macro_content = (response.choices[0].message.content or "").strip()
+
+        if "## 💡 产品与运营行动建议" in macro_content:
+            parts = macro_content.split("## 💡 产品与运营行动建议", 1)
+            summary_part = parts[0].strip()
+            action_part = "## 💡 产品与运营行动建议\n\n" + parts[1].strip()
+        else:
+            summary_part = macro_content
             action_part = """## 💡 产品与运营行动建议
+- 持续跟踪上述重点竞品在工作流、模型能力与商业化定价层面的最新动向。"""
+    except Exception as exc:
+        print(f"[汇总降级] 宏观总结生成失败：{compact_error(exc)}")
+        changed_count = len(state.get("changed_urls", []))
+        summary_part = f"""## 🌟 今日重点提炼
+本次完成 {len(state['comparisons'])} 个站点分析，其中 {changed_count} 个站点进入实质变化分析。宏观模型总结生成失败，请直接查看下方逐站证据。"""
+        action_part = """## 💡 产品与运营行动建议
 - 请人工复核逐站差异与截图后再制定行动计划。"""
+
+    if not summary_part.startswith("## 🌟 今日重点提炼"):
+        summary_part = f"## 🌟 今日重点提炼\n\n{summary_part}"
 
     competitors_section = f"## 📊 竞品全景监测看板（基准画像 + 最新动态追踪 · 共 {len(state['comparisons'])} 个站点）\n\n"
     for i, (url, result) in enumerate(state["comparisons"].items(), 1):
