@@ -4,7 +4,6 @@
 抓取指定站点、截取渲染截图、调用大模型生成严格证据归因画像，并同步更新配置与快照。
 """
 
-import sys
 import os
 import asyncio
 import json
@@ -164,7 +163,7 @@ async def process_all():
                 # 生成画像
                 print(f"  [*] 正在调用大模型 ({model}) 生成深度基准画像...")
                 profile_md = generate_profile(client, model, url, name, content)
-                print(f"  [OK] 基准画像生成完毕！")
+                print("  [OK] 基准画像生成完毕！")
 
                 # 保存快照 JSON
                 now_iso = datetime.now().isoformat()
