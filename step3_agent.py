@@ -816,7 +816,7 @@ async def generate_report_node(state: AgentState) -> dict:
     print("日报生成完成！共包含 " + str(len(state['comparisons'])) + " 个完整竞品板块")
     print(tracker.summary_markdown())
 
-    report_path = os.path.join(REPORT_DIR, f"daily_report_{format_beijing_time(fmt='%Y%m%d_%H%M%S')}.md")
+    report_path = os.path.join(REPORT_DIR, f"daily_report_{format_beijing_time(fmt='%Y%m%d')}.md")
     atomic_write_text(report_path, final_report)
     print(f"日报已保存至：{report_path}")
     emit_run_event(
