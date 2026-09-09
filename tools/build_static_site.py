@@ -1400,7 +1400,7 @@ def generate_html(data: dict) -> str:
         <div class="hero-banner">
             <div class="hero-heading">
                 <h1>全景态势洞察与版本演进</h1>
-                <p>自动化监控 16 家核心 AIGC 竞品站点，固化网页正文、渲染截图与结构化引文证据，生成深度画像与每日版本迭代分析。</p>
+                <p>自动化监控 {total_sites} 家核心 AIGC 竞品站点，固化网页正文、渲染截图与结构化引文证据，生成深度画像与每日版本迭代分析。</p>
             </div>
         </div>
 
