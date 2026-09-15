@@ -30,5 +30,10 @@ jobs:
         run: python -m ruff check .
       - name: Compile
         run: python -m compileall -q .
+      # dist/ 不再提交进仓库，这里先构建一次，否则构建产物契约测试会
+      # 因为找不到 dist 而静默跳过。构建器只依赖标准库。
+      - name: Build static site
+        run: python tools/build_static_site.py
+
       - name: Offline tests
         run: python -m unittest discover -s tests -v
