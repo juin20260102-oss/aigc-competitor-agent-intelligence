@@ -9,7 +9,7 @@ import re
 import json
 import shutil
 import html
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from datetime import datetime
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -278,7 +278,9 @@ def load_all_data():
         screenshot_filename = ""
         orig_shot_path = snap.get("screenshot_path", "")
         if orig_shot_path:
-            screenshot_filename = Path(orig_shot_path).name
+            # 快照里的路径可能是 Windows 反斜杠风格；PureWindowsPath 同时
+            # 把 / 和 \ 当分隔符，因此在 Linux 构建时也能正确取到文件名。
+            screenshot_filename = PureWindowsPath(orig_shot_path).name
         else:
             domain = url_norm.replace("https://", "").replace("http://", "").split("/")[0]
             candidate = SCREENSHOTS_DIR / f"{domain}_latest.png"

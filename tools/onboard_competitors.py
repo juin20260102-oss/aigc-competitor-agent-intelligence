@@ -172,7 +172,7 @@ async def process_all():
                     "url": url,
                     "content": content,
                     "profile": profile_md,
-                    "screenshot_path": f"data\\screenshots\\{shot_file}",
+                    "screenshot_path": f"data/screenshots/{shot_file}",
                     "captured_at": now_iso,
                     "update_history": [
                         {

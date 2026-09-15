@@ -151,7 +151,7 @@ def register():
             "url": url,
             "content": f"{cfg['name']} 官方网站真实抓取页面正文",
             "profile": item["profile"],
-            "screenshot_path": f"data\\screenshots\\{shot_file}",
+            "screenshot_path": f"data/screenshots/{shot_file}",
             "captured_at": NOW_ISO,
             "update_history": [
                 {
