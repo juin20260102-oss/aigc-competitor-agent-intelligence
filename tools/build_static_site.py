@@ -6,6 +6,7 @@ AIGC 竞品态势感知看板 - 纯静态站点生成器 (Static Site Generator)
 """
 
 import re
+import sys
 import json
 import shutil
 import html
@@ -13,13 +14,30 @@ from pathlib import Path, PureWindowsPath
 from datetime import datetime
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
-REPORTS_DIR = PROJECT_ROOT / "reports"
-SNAPSHOTS_DIR = DATA_DIR / "snapshots"
-SCREENSHOTS_DIR = DATA_DIR / "screenshots"
-COMPETITORS_FILE = DATA_DIR / "competitors.json"
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from agent_utils import RUNTIME_ROOT, merged_artifact_files  # noqa: E402
+
+# 仓库里的 data/ 与 reports/ 是随仓库分发的演示数据；Agent 真正的产出写在
+# RUNTIME_ROOT（可由 AGENT_RUNTIME_DIR 覆盖，CI 上从 R2 恢复）。静态站点
+# 必须两者合并、runtime 优先，否则定时任务跑完仍会发布演示数据。
+DEMO_DATA_DIR = PROJECT_ROOT / "data"
+DEMO_REPORTS_DIR = PROJECT_ROOT / "reports"
+RUNTIME_DATA_DIR = RUNTIME_ROOT / "data"
+RUNTIME_REPORTS_DIR = RUNTIME_ROOT / "reports"
+
+DATA_DIR = DEMO_DATA_DIR
+REPORTS_DIR = DEMO_REPORTS_DIR
+SNAPSHOTS_DIR = DEMO_DATA_DIR / "snapshots"
+SCREENSHOTS_DIR = DEMO_DATA_DIR / "screenshots"
+COMPETITORS_FILE = DEMO_DATA_DIR / "competitors.json"
 DIST_DIR = PROJECT_ROOT / "dist"
 DIST_SCREENSHOTS_DIR = DIST_DIR / "screenshots"
+
+# runtime 优先、demo 兜底的具体来源
+SNAPSHOT_SOURCES = (RUNTIME_DATA_DIR / "snapshots", SNAPSHOTS_DIR)
+SCREENSHOT_SOURCES = (SCREENSHOTS_DIR, RUNTIME_DATA_DIR / "screenshots")  # 后者覆盖前者
 
 
 def markdown_to_html(md_text: str) -> str:
@@ -231,12 +249,16 @@ def markdown_to_html(md_text: str) -> str:
 def load_all_data():
     """读取竞品配置、快照档案与历史日报"""
     competitors = []
-    if COMPETITORS_FILE.exists():
-        with open(COMPETITORS_FILE, "r", encoding="utf-8-sig") as f:
+    competitors_file = next(
+        (p for p in (RUNTIME_DATA_DIR / "competitors.json", COMPETITORS_FILE) if p.exists()),
+        None,
+    )
+    if competitors_file:
+        with open(competitors_file, "r", encoding="utf-8-sig") as f:
             competitors = json.load(f)
 
     snapshots = {}
-    for sp in SNAPSHOTS_DIR.glob("*_latest.json"):
+    for sp in map(Path, merged_artifact_files(*SNAPSHOT_SOURCES, "*_latest.json")):
         try:
             with open(sp, "r", encoding="utf-8-sig") as f:
                 data = json.load(f)
@@ -283,9 +305,11 @@ def load_all_data():
             screenshot_filename = PureWindowsPath(orig_shot_path).name
         else:
             domain = url_norm.replace("https://", "").replace("http://", "").split("/")[0]
-            candidate = SCREENSHOTS_DIR / f"{domain}_latest.png"
-            if candidate.exists():
-                screenshot_filename = candidate.name
+            for source in SCREENSHOT_SOURCES:
+                candidate = source / f"{domain}_latest.png"
+                if candidate.exists():
+                    screenshot_filename = candidate.name
+                    break
 
         update_history = snap.get("update_history", [])
         latest_update = update_history[-1] if update_history else None
@@ -307,7 +331,9 @@ def load_all_data():
         })
 
     reports = []
-    for rp in sorted(REPORTS_DIR.glob("daily_report_*.md"), reverse=True):
+    # 严格匹配 8 位日期，排除单次运行留下的 daily_report_YYYYMMDD_HHMMSS.md 中间产物
+    report_files = merged_artifact_files(RUNTIME_REPORTS_DIR, REPORTS_DIR, "daily_report_????????.md")
+    for rp in sorted(map(Path, report_files), key=lambda item: item.name, reverse=True):
         try:
             filename = rp.name
             date_match = re.search(r"(\d{8})", filename)
@@ -346,12 +372,14 @@ def copy_assets():
     DIST_DIR.mkdir(parents=True, exist_ok=True)
     DIST_SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
     
-    count = 0
-    if SCREENSHOTS_DIR.exists():
-        for img in SCREENSHOTS_DIR.glob("*.png"):
-            dest = DIST_SCREENSHOTS_DIR / img.name
-            shutil.copy2(img, dest)
-            count += 1
+    copied: dict[str, Path] = {}
+    for source in SCREENSHOT_SOURCES:  # 顺序即优先级，runtime 覆盖 demo
+        if source.exists():
+            for img in source.glob("*.png"):
+                copied[img.name] = img
+    for name, img in copied.items():
+        shutil.copy2(img, DIST_SCREENSHOTS_DIR / name)
+    count = len(copied)
     print(f"[OK] 成功复制 {count} 张截图证据到 dist/screenshots/")
 
 

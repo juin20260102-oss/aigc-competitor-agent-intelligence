@@ -18,7 +18,7 @@ AIGC 竞品态势感知 Agent 是一个自动化竞品信息采集与分析工�
 - **证据校验**：模型先返回受限 JSON，本地逐条匹配新旧正文引文后再渲染报告；
 - **日报生成**：汇总各站点变化，生成带时间戳的 Markdown 报告；
 - **可视化查询**：通过工作台查看概览、历史报告、竞品档案和截图；
-- **静态看板与 Cloudflare Pages 部署**：支持一键编译自包含静态 Web 看板，可直接部署至 Cloudflare Pages（免自有域名、国内秒开、零 API Key 泄露风险）；
+- **静态看板与 Cloudflare Pages 部署**：支持一键编译自包含静态 Web 看板，可直接部署至 Cloudflare Pages（免自有域名、国内秒开、零 API Key 泄露风险），并由 GitHub Actions 在每日 Agent 跑完后自动发布；
 - **结果分发**：支持下载报告，并可选推送至企业微信群机器人；
 - **定时执行**：提供 Windows 任务计划注册脚本。
 
@@ -157,6 +157,19 @@ python step3_agent.py
 仓库提供 [`.github/workflows/daily-monitor.yml`](.github/workflows/daily-monitor.yml)，可在 GitHub 的 Ubuntu Runner 上每天运行 Agent。Runner 是临时的，运行前从私有 Cloudflare R2 恢复 `runtime/`，运行后再上传；不把截图和快照提交回 Git。
 
 首次部署需要在 GitHub Actions 配置 Cloudflare 账户、具备 R2 读写权限的 API Token、R2 桶名和模型 Key。完整的 Secret 列表、权限要求、预算和首次验证步骤见 [GitHub Actions + R2 部署手册](docs/GITHUB_ACTIONS_R2.md)。
+
+定时任务默认是关闭的：`daily-monitor.yml` 的 job 带 `if: vars.AGENT_SCHEDULE_ENABLED == 'true'`，
+仓库变量没设成 `true` 时每天会准时触发、准时跳过。要真正开跑，需在
+Settings → Secrets and variables → Actions → Variables 里把 `AGENT_SCHEDULE_ENABLED` 设为 `true`。
+
+### 静态看板的自动发布
+
+[`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml) 负责把看板发布到 Cloudflare Pages，
+触发时机有三个：push 到 `main` 且改动了站点内容、每日 Agent 成功跑完之后、以及手动触发。
+它会先从 R2 恢复 `runtime/`，再构建、跑构建产物契约测试，最后用 `wrangler-action` 部署。
+
+> 构建产物 `dist/` 不提交进仓库，由 CI 在部署前重新构建。本地需要预览或手动发布时，
+> 仍可用 `build_site.bat` 和 `deploy_pages.bat`。
 
 ## 运行模式
 

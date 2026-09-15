@@ -25,5 +25,10 @@ runtime/
 # Cloudflare Wrangler cache
 .wrangler/
 
+# 静态站点构建产物：由 tools/build_static_site.py 生成，CI 在部署前重新构建。
+# 过去它被提交进仓库，导致 dist/screenshots 与 data/screenshots 各存一份
+# 相同的 13MB 截图，且产物会随构建平台漂移。
+dist/
+
 # Temporary scratch scripts
 scratch/
