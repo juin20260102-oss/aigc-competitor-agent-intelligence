@@ -14,40 +14,38 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
-    env:
-      # runner 镜像预装的工具（pipx 等）不是本项目的依赖，却会被 pip check
-      # 一起校验：pipx 要求 packaging>=26，而 requirements.lock 钉了 25.0，
-      # 于是 CI 从 2026-09 起一直红。整个 job 改在干净 venv 里跑，pip check
-      # 就只校验项目自身的依赖图。venv 建在 workspace 之外，避免 compileall
-      # 去遍历它。
-      VENV_PY: ${{ runner.temp }}\venv\Scripts\python.exe
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      # runner 镜像预装的工具（pipx 等）不是本项目的依赖，却会被 pip check
+      # 一起校验：pipx 要求 packaging>=26，而 requirements.lock 钉了 25.0，
+      # 于是 CI 从 2026-09 起一直红。整个 job 改在干净 venv 里跑，pip check
+      # 就只校验项目自身的依赖图。venv 建在 RUNNER_TEMP 而非仓库内，避免
+      # compileall 去遍历它。
       - name: Create isolated environment
         run: |
-          python -m venv "${{ runner.temp }}\venv"
-          & "$env:VENV_PY" -m pip install --upgrade pip
+          python -m venv "$env:RUNNER_TEMP\venv"
+          & "$env:RUNNER_TEMP\venv\Scripts\python.exe" -m pip install --upgrade pip
       - name: Install dependencies
         run: |
-          & "$env:VENV_PY" -m pip install -r requirements.lock
-          & "$env:VENV_PY" -m pip install "ruff==0.12.0"
+          & "$env:RUNNER_TEMP\venv\Scripts\python.exe" -m pip install -r requirements.lock
+          & "$env:RUNNER_TEMP\venv\Scripts\python.exe" -m pip install "ruff==0.12.0"
       - name: Validate dependency graph
         run: |
-          & "$env:VENV_PY" -m pip check
+          & "$env:RUNNER_TEMP\venv\Scripts\python.exe" -m pip check
       - name: Lint
         run: |
-          & "$env:VENV_PY" -m ruff check .
+          & "$env:RUNNER_TEMP\venv\Scripts\python.exe" -m ruff check .
       - name: Compile
         run: |
-          & "$env:VENV_PY" -m compileall -q .
+          & "$env:RUNNER_TEMP\venv\Scripts\python.exe" -m compileall -q .
       # dist/ 不再提交进仓库，这里先构建一次，否则构建产物契约测试会
       # 因为找不到 dist 而静默跳过。构建器只依赖标准库。
       - name: Build static site
         run: |
-          & "$env:VENV_PY" tools/build_static_site.py
+          & "$env:RUNNER_TEMP\venv\Scripts\python.exe" tools/build_static_site.py
       - name: Offline tests
         run: |
-          & "$env:VENV_PY" -m unittest discover -s tests -v
+          & "$env:RUNNER_TEMP\venv\Scripts\python.exe" -m unittest discover -s tests -v
