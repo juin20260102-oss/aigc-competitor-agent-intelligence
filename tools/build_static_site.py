@@ -13,6 +13,13 @@ import html
 from pathlib import Path, PureWindowsPath
 from datetime import datetime
 
+# Windows 控制台默认可能是 GBK/cp1252，脚本的中文输出会直接抛
+# UnicodeEncodeError。本地由 build_site.bat 的 chcp 65001 兜着，但 CI 上
+# 直接调用就会失败，所以在这里显式声明输出编码。
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
