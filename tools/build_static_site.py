@@ -375,20 +375,37 @@ def load_all_data():
     }
 
 
-def copy_assets():
-    """复制截图资源到 dist/screenshots/"""
+def copy_assets(data: dict) -> None:
+    """只把页面真正引用的截图复制进 dist/screenshots/。
+
+    早先是把 data/ 和 runtime/ 两处的 *.png 全量复制。两处各有一套命名
+    （旧的 host_latest.png 与迁移后的 host--<hash>_latest.png），而页面
+    只会引用其中一套，于是每次部署有一半以上的体积是没人会访问的文件。
+    """
     DIST_DIR.mkdir(parents=True, exist_ok=True)
     DIST_SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
-    
-    copied: dict[str, Path] = {}
+
+    wanted = {c["screenshot"] for c in data["competitors"] if c.get("screenshot")}
+
+    available: dict[str, Path] = {}
     for source in SCREENSHOT_SOURCES:  # 顺序即优先级，runtime 覆盖 demo
         if source.exists():
             for img in source.glob("*.png"):
-                copied[img.name] = img
-    for name, img in copied.items():
+                if img.name in wanted:
+                    available[img.name] = img
+
+    for name, img in available.items():
         shutil.copy2(img, DIST_SCREENSHOTS_DIR / name)
-    count = len(copied)
-    print(f"[OK] 成功复制 {count} 张截图证据到 dist/screenshots/")
+
+    # 清掉上一次构建留下、本次不再引用的文件，否则 dist 只增不减
+    for stale in DIST_SCREENSHOTS_DIR.glob("*.png"):
+        if stale.name not in wanted:
+            stale.unlink()
+
+    missing = sorted(wanted - available.keys())
+    if missing:
+        print(f"[WARN] {len(missing)} 张被引用的截图在源目录中缺失：{', '.join(missing[:3])}")
+    print(f"[OK] 成功复制 {len(available)} 张截图证据到 dist/screenshots/")
 
 
 def render_template(template: str, values: dict[str, object]) -> str:
@@ -440,7 +457,7 @@ def build():
     data = load_all_data()
     print(f"[OK] 成功加载 {len(data['competitors'])} 个竞品档案，{len(data['reports'])} 期历史日报")
 
-    copy_assets()
+    copy_assets(data)
 
     html_content = generate_html(data)
     index_path = DIST_DIR / "index.html"
