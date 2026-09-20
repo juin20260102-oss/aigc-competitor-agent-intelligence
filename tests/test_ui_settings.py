@@ -5,7 +5,6 @@ ui/ 目录约 1200 行此前零测试。Streamlit 的渲染函数难以直测，
 前对模型端点与企业微信 Webhook 的校验。
 """
 
-import os
 import tempfile
 import unittest
 from pathlib import Path
