@@ -1,5 +1,7 @@
 # AIGC 竞品态势感知 Agent
 
+**在线看板 → <https://aigc-intel-hub.pages.dev>** （纯静态、无需 API Key，展示 21 家竞品的画像、页面存证截图与历史日报）
+
 AIGC 竞品态势感知 Agent 是一个自动化竞品信息采集与分析工具，用于定期抓取竞品网站、保存页面证据、识别版本变化，并生成结构化 Markdown 日报。
 
 项目提供 Streamlit 可视化工作台，可集中管理监控站点、查看竞品档案、浏览截图、检索历史报告，并按需将结果推送至企业微信群。
@@ -253,9 +255,7 @@ Settings → Secrets and variables → Actions → Variables 里把 `AGENT_SCHED
 │   ├── competitors.py           # 竞品清单与档案
 │   ├── gallery.py               # 截图证据
 │   └── settings.py              # 模型与通知配置
-├── step1_fetch_and_analyze.py    # 单站抓取与画像测试
-├── step2_compare.py              # 单站版本对比测试
-├── step3_agent.py                # 竞品页面监控工作流
+├── step3_agent.py                # 竞品页面监控工作流（唯一入口）
 ├── agent_utils.py                # 安全校验、变化预筛、原子写入与运行锁
 ├── data/
 │   ├── competitors.json
