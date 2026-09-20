@@ -72,13 +72,23 @@ class HeroCopyTest(unittest.TestCase):
 
 
 class SnapshotPathWriterTest(unittest.TestCase):
-    """新写入的快照路径必须可移植（正斜杠）。"""
+    """写进快照的路径必须可移植。
 
-    def test_writers_use_forward_slashes(self):
-        for name in ("onboard_competitors.py", "register_new_competitors.py"):
-            src = (PROJECT_ROOT / "tools" / name).read_text(encoding="utf-8")
-            self.assertIn('f"data/screenshots/{shot_file}"', src, name)
-            self.assertNotIn("data" + chr(92) * 2 + "screenshots", src, f"{name} 仍在写 Windows 路径")
+    存量快照里是 Windows 反斜杠风格的截图路径。反斜杠在 POSIX 上不是分隔符，
+    构建器在 Linux 上取不到文件名，21 张截图会整体 404。读取侧已用
+    PureWindowsPath 兜住，这里守住写入侧不再产生新的反斜杠路径。
+    """
+
+    def test_no_module_writes_windows_screenshot_paths(self):
+        needle = '"data' + chr(92) * 2 + 'screenshots'
+        skip = {".venv", "__pycache__", "dist", "runtime", ".git"}
+        offenders = []
+        for path in PROJECT_ROOT.rglob("*.py"):
+            if any(part in skip for part in path.parts):
+                continue
+            if needle in path.read_text(encoding="utf-8"):
+                offenders.append(path.relative_to(PROJECT_ROOT).as_posix())
+        self.assertEqual(offenders, [], f"这些模块仍在写 Windows 风格截图路径：{offenders}")
 
 
 class RuntimePrecedenceTest(unittest.TestCase):
