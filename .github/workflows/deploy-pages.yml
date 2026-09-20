@@ -39,9 +39,9 @@ jobs:
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
       R2_RUNTIME_PREFIX: aigc-competitor-agent/runtime
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
@@ -67,7 +67,7 @@ jobs:
         run: python tools/build_static_site.py
 
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
