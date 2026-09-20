@@ -204,5 +204,58 @@ class TemplateFileTest(unittest.TestCase):
         return mod.generate_html({"competitors": [], "reports": []})
 
 
+class ShippedAssetsTest(unittest.TestCase):
+    """dist 里只应有页面真正引用的截图。
+
+    data/ 与 runtime/ 各有一套命名（旧的 host_latest.png 与迁移后的
+    host--<hash>_latest.png），页面只引用其中一套。早先是两套全量复制，
+    每次部署有 59% 的体积是没人会访问的文件。
+    """
+
+    @unittest.skipUnless(DIST_INDEX.exists(), "dist 尚未构建")
+    def test_ships_exactly_what_the_page_references(self):
+        wanted = {c["screenshot"] for c in load_site_data()["competitors"] if c.get("screenshot")}
+        shipped = {p.name for p in DIST_SCREENSHOTS.glob("*.png")}
+        self.assertEqual(shipped, wanted,
+                         f"多余 {sorted(shipped - wanted)[:3]} / 缺失 {sorted(wanted - shipped)[:3]}")
+
+    @unittest.skipUnless(DIST_INDEX.exists(), "dist 尚未构建")
+    def test_rebuild_removes_stale_files(self):
+        """上一次构建留下的文件必须被清掉，否则 dist 只增不减。"""
+        import subprocess
+        import sys
+
+        stale = DIST_SCREENSHOTS / "zz_not_referenced_by_any_page.png"
+        stale.write_bytes(b"\x89PNG\r\n\x1a\n")
+        self.assertTrue(stale.is_file())
+        result = subprocess.run(
+            [sys.executable, str(PROJECT_ROOT / "tools" / "build_static_site.py")],
+            cwd=PROJECT_ROOT, capture_output=True, text=True, encoding="utf-8",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr[-1000:])
+        self.assertFalse(stale.exists(), "重建后陈旧截图仍留在 dist 中")
+
+    def test_copy_assets_warns_instead_of_crashing_on_missing_source(self):
+        """被引用但源目录里没有的截图，应当告警而不是让整个构建挂掉。"""
+        import importlib
+        import io
+        import contextlib
+
+        import shutil
+        import tempfile
+        from unittest import mock
+
+        mod = importlib.import_module("tools.build_static_site")
+        # 指向临时目录：copy_assets 会清掉未被引用的文件，不能让它动真实 dist
+        tmp = Path(tempfile.mkdtemp(prefix="dist-probe-"))
+        try:
+            buf = io.StringIO()
+            with mock.patch.object(mod, "DIST_DIR", tmp),                  mock.patch.object(mod, "DIST_SCREENSHOTS_DIR", tmp / "screenshots"),                  contextlib.redirect_stdout(buf):
+                mod.copy_assets({"competitors": [{"screenshot": "definitely_missing_xyz.png"}]})
+            self.assertIn("WARN", buf.getvalue())
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()
